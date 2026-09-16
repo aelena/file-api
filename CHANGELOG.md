@@ -4,6 +4,39 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1]
+
+Documentation only. No code changed; this exists because the README that appears
+on a package's nuget.org listing page is the one packed at release time, and
+0.4.0's was thinner than what it documented.
+
+### Changed
+
+- **Each package README now has examples for what the package actually does.**
+  `Core` listed thirteen capability areas and had examples for four of them —
+  DOCX, images, email and ZIP had none. `Core.Pdf` described its whole write
+  half and the Markdown typesetting added in 0.4.0 in prose, and showed neither.
+  The CLI documented five exit codes and never demonstrated branching on them,
+  which is the one thing a flat list of commands cannot show.
+- Corrected the `Core.Pdf` blurb, which still described `Core`'s contents as of
+  0.3.x and did not mention the ebook and legacy formats.
+
+### Fixed
+
+- **Every C# example now compiles.** Extracting the twelve of them into a
+  project built against the real assemblies found four errors that reading them
+  had not: a parameter named `format` that is really `targetFormat`, a `Search`
+  overload whose `query` and `pattern` have no defaults so neither can be
+  omitted, and two blocks using variables they never declared. The `Core`
+  example had been calling `PiiService.Detect(text, …)` in a block that only
+  ever defined `bytes` — an error that predates 0.4.0.
+- **The CLI example was run rather than written.** Doing so found two faults in
+  it: `case $?` after an `if` reads the status of the branch that ran rather
+  than of the command in the condition, so every failure fell through to the
+  catch-all; and three fixtures sharing a file stem overwrote each other's
+  output. The published script is the corrected one, its output is what it
+  actually printed, and the `$?` trap is called out in prose.
+
 ## [0.4.0]
 
 Four formats that had no home in this toolkit — EPUB, MOBI, DjVu and the legacy
