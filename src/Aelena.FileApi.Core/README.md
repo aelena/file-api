@@ -42,56 +42,196 @@ Targets `net10.0` and `net11.0`.
 | **ZIP** | Entry listing with sizes, compression and CRC-32, without extracting |
 | **Persistence** | SQLite-backed share links; a bounded in-memory job store |
 
-## Example
+## Examples
+
+Every operation is a static method taking `byte[]` and a file name, and
+returning an immutable record. There is nothing to construct, register or
+dispose.
+
+### Word documents
 
 ```csharp
-using Aelena.FileApi.Core.Services.Common;
+using Aelena.FileApi.Core.Services.Docx;
 
-var bytes = await File.ReadAllBytesAsync("contract.docx");
+var docx = await File.ReadAllBytesAsync("report.docx");
 
-// Content fingerprints
-var hashes = HashService.ComputeHash(bytes, "contract.docx");
-Console.WriteLine(hashes.Sha256);
+var metrics = DocxService.GetMetrics(docx, "report.docx");
+Console.WriteLine($"{metrics.ParagraphCount} paragraphs, {metrics.WordCount} words, "
+                + $"{metrics.TableCount} tables, {metrics.ImageCount} images");
 
-// Personal data, with position and surrounding context
-var pii = PiiService.Detect(text, "contract.docx");
-foreach (var match in pii.Matches)
-    Console.WriteLine($"{match.PiiType}: {match.Value} at {match.Start}");
+// Headings, lists, tables and emphasis survive the conversion.
+Console.WriteLine(DocxService.ExtractToMarkdown(docx, "report.docx").Markdown);
 
-// Readability
-var score = ReadabilityService.Analyse(text, "contract.docx", language: "en");
-Console.WriteLine($"Flesch {score.FleschReadingEase:F1} — {score.Interpretation}");
+// Tracked changes, comments, macros — things you want to know about before
+// a document leaves the building.
+var health = DocxService.HealthCheck(docx, "report.docx");
+foreach (var issue in health.Issues)
+    Console.WriteLine($"[{issue.Severity}] {issue.Check}: {issue.Message}");
+
+// Strip authorship and revision history, keeping the content.
+var (cleanName, cleanBytes) = DocxService.RemoveMetadata(docx, "report.docx");
+await File.WriteAllBytesAsync(cleanName, cleanBytes);
 ```
 
-Ebook and legacy office formats go through one façade, which identifies the file
-from its content rather than its name and validates it before converting:
+### Ebooks and legacy office formats
+
+One façade for EPUB, MOBI/PalmDOC, DjVu and legacy binary `.doc`. It identifies
+the file from its content rather than its name, and validates it before
+converting anything.
 
 ```csharp
 using Aelena.FileApi.Core.Services.Documents;
 
 var book = await File.ReadAllBytesAsync("book.epub");
 
-// What is it, really? (A renamed file is the normal case, not the exception.)
+// What is it, really? A renamed file is the normal case, not the exception.
 var detected = DocumentConversionService.Detect(book, "book.epub");
-Console.WriteLine($"{detected.Format}, mismatch: {detected.ExtensionMismatch}");
+Console.WriteLine($"{detected.Format}, extension disagrees: {detected.ExtensionMismatch}");
 
-// Every structural issue, as a report rather than a refusal
+// Every structural issue at once — a report, not a refusal.
 var report = DocumentConversionService.Validate(book, "book.epub");
 foreach (var issue in report.Issues)
     Console.WriteLine($"[{issue.Severity}] {issue.Check}: {issue.Message}");
 
 if (report.CanExtractText)
-    Console.WriteLine(DocumentConversionService.ExtractToMarkdown(book, "book.epub").Markdown);
+{
+    var meta = DocumentConversionService.GetMetadata(book, "book.epub");
+    Console.WriteLine($"{meta.Title} — {string.Join(", ", meta.Authors ?? [])}");
+
+    var (mdName, mdBytes) = DocumentConversionService.ToMarkdownFile(book, "book.epub");
+    await File.WriteAllBytesAsync(mdName, mdBytes);
+}
 ```
 
-Recognised-but-undecodable content is a `501`, never an empty success: DRM in
-EPUB and MOBI, HUFF/CDIC-compressed MOBI, and BZZ-compressed DjVu text layers
+`Validate` answers for any supported format, so it doubles as a triage pass over
+a mixed directory:
+
+```csharp
+foreach (var path in Directory.EnumerateFiles("inbox"))
+{
+    var bytes = await File.ReadAllBytesAsync(path);
+    var name = Path.GetFileName(path);
+
+    if (!DocumentConversionService.Detect(bytes, name).Supported)
+        continue;
+
+    var check = DocumentConversionService.Validate(bytes, name);
+    Console.WriteLine($"{name,-30} {check.Format,-8} "
+                    + $"valid={check.Valid} text={check.CanExtractText} "
+                    + $"({check.ErrorCount} errors, {check.WarningCount} warnings)");
+}
+```
+
+Recognised-but-undecodable content raises a `501`, never an empty success: DRM
+in EPUB and MOBI, HUFF/CDIC-compressed MOBI, and BZZ-compressed DjVu text layers
 each say so, and say what to do instead.
 
+### Images
+
+Every transform returns the new bytes with the media type to serve them under,
+so the result can go straight into a response or onto disk.
+
+```csharp
+using Aelena.FileApi.Core.Services.Image;
+
+var photo = await File.ReadAllBytesAsync("photo.jpg");
+
+// EXIF, including GPS where the camera recorded it.
+var exif = ImageService.GetExif(photo, "photo.jpg");
+Console.WriteLine($"{exif.Width}x{exif.Height} {exif.Format}");
+foreach (var (key, value) in exif.Gps ?? new Dictionary<string, string>())
+    Console.WriteLine($"  {key}: {value}");
+
+// Width only: the height follows from the aspect ratio.
+var (name, resized, mediaType) = ImageService.Resize(photo, "photo.jpg", width: 800, height: null);
+await File.WriteAllBytesAsync(name, resized);
+
+// Format conversion, and metadata removal before publishing.
+var (webpName, webp, _) = ImageService.Convert(photo, "photo.jpg", targetFormat: "webp");
+var (strippedName, stripped, _) = ImageService.StripMetadata(photo, "photo.jpg");
+
+var palette = ImageService.ExtractColorPalette(photo, "photo.jpg", numColors: 5);
+Console.WriteLine($"dominant {palette.DominantColor}");
+foreach (var colour in palette.Palette)
+    Console.WriteLine($"  {colour.Hex} {colour.Percentage:F1}%");
+```
+
+### Text, hashing, PII and readability
+
+```csharp
+using Aelena.FileApi.Core.Services.Common;
+
+var bytes = await File.ReadAllBytesAsync("contract.txt");
+var text = Encoding.UTF8.GetString(bytes);
+
+// Three digests plus a composite that folds in the name and size, so two
+// files with identical content but different names hash differently.
+var hashes = HashService.ComputeHash(bytes, "contract.txt");
+Console.WriteLine($"{hashes.Sha256}  (composite {hashes.CompositeSha256})");
+
+// Personal data, with position and surrounding context.
+var pii = PiiService.Detect(text, "contract.txt");
+foreach (var match in pii.Matches)
+    Console.WriteLine($"{match.PiiType}: {match.Value} at {match.Start} — \"{match.Context}\"");
+
+var score = ReadabilityService.Analyse(text, "contract.txt", language: "en");
+Console.WriteLine($"Flesch {score.FleschReadingEase:F1} — {score.Interpretation}");
+
+// Literal or regex search, with context around each hit.
+var (_, matches) = TxtService.Search(bytes, "contract.txt", pattern: @"[A-Z]{2,}");
+Console.WriteLine($"{matches.Count} acronym(s)");
+```
+
+### Email and archives
+
+```csharp
+using Aelena.FileApi.Core.Services.Common;
+
+var eml = await File.ReadAllBytesAsync("message.eml");
+var mail = EmailService.Parse(eml, "message.eml");
+
+Console.WriteLine($"{mail.FromAddress} -> {string.Join(", ", mail.To ?? [])}");
+Console.WriteLine($"{mail.Subject} ({mail.Date})");
+foreach (var attachment in mail.Attachments ?? [])
+    Console.WriteLine($"  {attachment.Filename} {attachment.ContentType} {attachment.SizeBytes:N0} bytes");
+
+// Entries come from the central directory, so a zip bomb costs no more to
+// inspect than a well-behaved archive of the same size.
+var zip = await File.ReadAllBytesAsync("archive.zip");
+var listing = ZipService.Inspect(zip, "archive.zip");
+
+Console.WriteLine($"{listing.TotalFiles} files, {listing.TotalUncompressedSize:N0} bytes unpacked");
+foreach (var entry in listing.Entries.Where(e => !e.IsDir))
+    Console.WriteLine($"  {entry.Filename,-40} {entry.FileSize,10:N0} {entry.CompressionMethod}");
+```
+
+### Failures
+
 Expected failures — an unsupported format, an out-of-range page, a malformed
-regex — throw `FileApiException`, which carries an HTTP status code and a
-message written for the caller rather than the maintainer. Caller-supplied
-regular expressions run with a match timeout.
+regex, a password-protected file — throw `FileApiException`, which carries an
+HTTP status code and a message written for the caller rather than the
+maintainer:
+
+```csharp
+using Aelena.FileApi.Core.Errors;
+using Aelena.FileApi.Core.Services.Documents;
+
+var scan = await File.ReadAllBytesAsync("scan.djvu");
+
+try
+{
+    DocumentConversionService.ExtractText(scan, "scan.djvu");
+}
+catch (FileApiException ex)
+{
+    // 415 wrong format for this call, 422 broken file,
+    // 501 readable but not decodable here.
+    Console.Error.WriteLine($"{ex.StatusCode} {ex.Title}: {ex.Detail}");
+}
+```
+
+Caller-supplied regular expressions run with a match timeout, so a pathological
+pattern reports a `400` instead of pinning a thread.
 
 ## PDF is a separate package, deliberately
 
