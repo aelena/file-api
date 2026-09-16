@@ -19,12 +19,12 @@
     <ToolCommandName>fileapi</ToolCommandName>
     <PackageId>Aelena.FileApi.Cli</PackageId>
     <Title>FileApi CLI</Title>
-    <Version>0.3.1</Version>
+    <Version>0.4.0</Version>
     <Authors>aelena</Authors>
-    <Description>Command-line document processing: PDF, DOCX, images, email, hashing, PII detection, readability and ZIP inspection. Installs the `fileapi` command.
+    <Description>Command-line document processing: PDF, DOCX, EPUB, MOBI, DjVu, legacy .doc, images, email, hashing, PII detection, readability and ZIP inspection. Installs the `fileapi` command.
 
 IMPORTANT LICENSING NOTE: this tool includes PDF support via Aelena.FileApi.Core.Pdf, which depends on iText 7 under the AGPL, so the tool as a whole is AGPL. The library without PDF, Aelena.FileApi.Core, is MIT.</Description>
-    <PackageTags>cli;dotnet-tool;pdf;docx;image;hash;pii;document</PackageTags>
+    <PackageTags>cli;dotnet-tool;pdf;docx;epub;mobi;djvu;image;hash;pii;document</PackageTags>
     <!-- AGPL, following Aelena.FileApi.Core.Pdf and therefore iText 7. -->
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>

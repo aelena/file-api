@@ -55,6 +55,14 @@ annotations, bookmarks, form fields, search with page numbers, health check.
 **Write** — merge, split, rotate, reorder, delete pages, insert blank pages,
 watermark, page numbers, encrypt, decrypt, unlock, compress, remove metadata.
 
+**Typeset** — `MarkdownPdfService` renders Markdown to PDF (headings, lists,
+tables, block quotes, code blocks, rules, inline emphasis), and converts the
+EPUB, MOBI, DjVu and legacy `.doc` files that `Aelena.FileApi.Core` reads
+straight through to PDF. Text is restricted to Windows-1252, because iText's
+built-in fonts carry no Unicode glyphs and embedding a font would mean shipping
+one: characters outside CP1252 are transliterated where there is an obvious
+reading and replaced with `?` where there is not.
+
 ```csharp
 using Aelena.FileApi.Core.Services.Pdf;
 

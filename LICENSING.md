@@ -111,6 +111,23 @@ None of these are copyleft, but two are worth knowing about.
 | Grpc.AspNetCore, Google.Protobuf | Apache-2.0 / BSD-3-Clause | |
 | xunit, AwesomeAssertions, NSubstitute, coverlet | Apache-2.0 / MIT / BSD-3-Clause | Test-only; not distributed. |
 
+## One feature the licence boundary costs us
+
+`Aelena.FileApi.Core` reads DjVu documents, but only extracts text from the
+uncompressed `TXTa` chunk. The compressed `TXTz` form that most real files use
+is BZZ-encoded, and BZZ needs the ZP adaptive arithmetic coder. The only
+published implementation of that coder is DjVuLibre's, which is **GPL-2.0** —
+strong copyleft, and not compatible with shipping this package as MIT.
+
+So the code is not there, and `/convert/text` answers `501` naming the reason
+rather than quietly returning nothing. The alternative was to vendor GPL code
+into a package this repository advertises as free of copyleft, which would have
+made the MIT claim false for every consumer of it. `djvutxt` from DjVuLibre
+extracts that text, under its own licence, on the caller's own machine.
+
+Everything else about a DjVu — page count, geometry, resolution, structure,
+validation — is read and returned normally.
+
 ## Not legal advice
 
 This is a description of the licences involved and of how the code is arranged,

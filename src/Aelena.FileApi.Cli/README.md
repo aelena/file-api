@@ -31,6 +31,10 @@ fileapi pdf merge -o merged.pdf a.pdf b.pdf
 fileapi pdf encrypt --password s3cret doc.pdf
 fileapi docx markdown notes.docx                # convert to Markdown
 fileapi docx metrics notes.docx
+fileapi convert detect mystery-file             # identify from content, not extension
+fileapi convert validate book.epub              # structural checks, every issue listed
+fileapi convert markdown book.mobi > book.md    # EPUB/MOBI/DjVu/.doc to Markdown
+fileapi convert pdf report.doc -o report.pdf    # and to PDF
 fileapi image resize --width 800 photo.jpg      # aspect ratio preserved
 fileapi image convert --format webp photo.png
 fileapi image exif photo.jpg

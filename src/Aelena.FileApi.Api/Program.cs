@@ -149,6 +149,11 @@ try
     app.MapGroup("/video").WithTags("Video").MapVideoEndpoints();
     app.MapGroup("/markdown").WithTags("Markdown").MapMarkdownEndpoints();
 
+    // ── Phase 8 endpoints ───────────────────────────────────────────────
+    // EPUB, MOBI/PalmDOC, DjVu and legacy .doc — formats with no toolkit of
+    // their own, converted to text, Markdown and PDF through one group.
+    app.MapGroup("/convert").WithTags("Convert").MapConvertEndpoints();
+
     app.Run();
 }
 catch (Exception ex)

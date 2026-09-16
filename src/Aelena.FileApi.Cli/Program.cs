@@ -13,7 +13,8 @@ var root = new RootCommand("fileapi — Document processing CLI powered by Aelen
     ZipCommand.Create(),
     ReadabilityCommand.Create(),
     PiiCommand.Create(),
-    EmailCommand.Create()
+    EmailCommand.Create(),
+    ConvertCommand.Create()
 };
 
 // Every command maps its own failures onto an exit code (see CommandExtensions.

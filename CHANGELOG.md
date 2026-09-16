@@ -4,6 +4,75 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0]
+
+Four formats that had no home in this toolkit — EPUB, MOBI, DjVu and the legacy
+binary `.doc` — now convert to text, Markdown and PDF through a single group at
+`/convert`, and the Markdown-to-PDF route that had been a stub since it was
+added now actually typesets.
+
+### Added — the `/convert` family
+
+Eight routes: `detect`, `validate`, `metadata`, `text`, `markdown`, `to-txt`,
+`to-md`, `to-pdf`. A `fileapi convert` CLI command mirrors them.
+
+- **Detection is by content, never by extension.** Dispatching on the extension
+  is how a `.zip` renamed to `.epub` becomes a 500 from inside a parser.
+  `/convert/detect` reports a disagreement between the two without refusing the
+  file; the conversion routes act on the content and name the mismatch if they
+  refuse.
+- **Validation runs before conversion, and reports rather than refuses.**
+  `/convert/validate` always answers `200` with the full issue list, because
+  "this EPUB has no `dc:language`" and "this EPUB has no spine" need very
+  different responses and only the caller can decide which matters. Checked:
+  the EPUB `mimetype` entry, `container.xml`, and the OPF manifest and spine,
+  with entry-count, total-size and compression-ratio limits read from the
+  central directory so a decompression bomb costs nothing to refuse; the Palm
+  record table's bounds and monotonicity and the PalmDOC header's declared
+  lengths; the DjVu container length and every IFF chunk's bounds; and the OLE2
+  FAT, the Word FIB's magic and version, and the piece table's own bounds.
+- **Three failures, three status codes,** pinned by tests over the real HTTP
+  surface: `415` for a format this group does not read (naming what the file
+  actually is, and pointing at `/pdf/*`, `/docx/*` or `/zip/inspect`), `422` for
+  the right format structurally broken, `501` for a file that is well-formed and
+  simply cannot be decoded here.
+- Every chain walk in the OLE2 reader is bounded by the table it indexes. A
+  compound file arriving over HTTP can have a FAT whose entries point at each
+  other in a cycle, and an unbounded walk would hang the request thread rather
+  than returning a `422`.
+- **DjVu text extraction is limited to uncompressed `TXTa` chunks, and says so.**
+  `TXTz` is BZZ-compressed; BZZ needs the ZP adaptive arithmetic coder, whose
+  only published implementation is DjVuLibre's, which is GPL and cannot be
+  vendored into an MIT package. A `TXTz`-only document answers `501` naming the
+  reason and pointing at `djvutxt`, rather than returning nothing and calling it
+  success. Page count, geometry, resolution and structure are read either way.
+  See [LICENSING.md](LICENSING.md).
+- HUFF/CDIC-compressed MOBI, DRM-locked EPUB and MOBI, and Word 6.0/95 `.doc`
+  are each recognised and each answer `501` (or `422` for Word 6.0/95, which is
+  a different file format rather than a locked one) with the reason.
+- Metadata does not go through the extraction. A scanned DjVu has no text and a
+  DRM-locked MOBI has text nobody can read; both still have metadata sitting in
+  the clear that a caller has every right to.
+
+### Fixed
+
+- **`/markdown/to-pdf` was a stub returning `501` "Coming soon".** It now
+  typesets through `MarkdownPdfService` — headings, lists, tables, block quotes,
+  code blocks, rules and inline emphasis. The `css` parameter is gone rather than
+  accepted and ignored: there is no HTML stage for a stylesheet to apply to.
+  Text is restricted to Windows-1252, because iText's built-in fonts carry no
+  Unicode glyphs; characters outside it are transliterated where there is an
+  obvious reading and replaced with `?` where there is not, which is documented
+  on the endpoint rather than discovered in the output.
+
+### Tests
+
+290 → 387 (580 → 774 executions across both frameworks). The new fixtures are
+real public-domain files in each format rather than synthesised ones — a parser
+that only ever sees its own author's output is a parser that has not been
+tested. Provenance for each is in
+[`tests/Aelena.FileApi.Tests/SampleFiles/README.md`](tests/Aelena.FileApi.Tests/SampleFiles/README.md).
+
 ## [0.3.0]
 
 A modernization pass over a codebase that had been sitting for six months.

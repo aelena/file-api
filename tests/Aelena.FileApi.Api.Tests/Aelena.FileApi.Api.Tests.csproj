@@ -11,6 +11,15 @@
     <ProjectReference Include="..\..\src\Aelena.FileApi.Core.Pdf\Aelena.FileApi.Core.Pdf.csproj" />
   </ItemGroup>
 
+  <!-- The public-domain conversion fixtures live with the unit tests; linked
+       here rather than duplicated so there is one copy and one provenance
+       record. See ../Aelena.FileApi.Tests/SampleFiles/README.md. -->
+  <ItemGroup>
+    <None Include="..\Aelena.FileApi.Tests\SampleFiles\*.*"
+          Link="SampleFiles\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />

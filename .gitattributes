@@ -5,12 +5,22 @@
 # satisfiable everywhere.
 * text=auto eol=lf
 
-# Binary assets must never be touched.
+# Binary assets must never be touched. `* text=auto` above would otherwise leave
+# these to git's NUL-byte heuristic, and a test fixture that gets line-ending
+# normalised is a test fixture that no longer parses.
 *.png binary
 *.jpg binary
 *.jpeg binary
 *.gif binary
 *.pdf binary
+*.epub binary
+*.mobi binary
+*.azw binary
+*.azw3 binary
+*.prc binary
+*.djvu binary
+*.djv binary
+*.doc binary
 *.docx binary
 *.xlsx binary
 *.pptx binary

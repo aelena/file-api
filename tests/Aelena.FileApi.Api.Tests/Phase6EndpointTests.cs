@@ -81,11 +81,30 @@ public class Phase6EndpointTests(WebApplicationFactory<Program> factory) : FileA
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
+#if INCLUDE_PDF
     [Fact]
-    public async Task MarkdownToPdf_ReturnsNotImplemented()
+    public async Task MarkdownToPdf_RendersRatherThanReturning501()
     {
+        // This pinned the stub the route used to be. It now typesets through
+        // MarkdownPdfService; the rendering itself is covered by
+        // MarkdownPdfServiceTests.
         using var form = CreateFile("# Hello", "doc.md");
         var response = await Client.PostAsync("/markdown/to-pdf", form);
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/pdf");
     }
+#else
+    [Fact]
+    public async Task MarkdownToPdf_Is501WithoutThePdfPackage()
+    {
+        // The renderer is built on iText. Without it the route stays and says
+        // what is missing, rather than 404-ing as if it had never existed.
+        using var form = CreateFile("# Hello", "doc.md");
+        var response = await Client.PostAsync("/markdown/to-pdf", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("IncludePdf=false");
+    }
+#endif
 }

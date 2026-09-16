@@ -1,7 +1,8 @@
 # Aelena.FileApi.Core
 
-Pure document processing for .NET — DOCX, images, email, hashing, PII detection,
-readability, text analysis and ZIP inspection.
+Pure document processing for .NET — DOCX, EPUB, MOBI, DjVu, legacy `.doc`,
+images, email, hashing, PII detection, readability, text analysis and ZIP
+inspection.
 
 No ASP.NET dependencies and no copyleft dependencies, so it works equally well in
 a console app, a desktop app, an Azure Function, or behind an HTTP or gRPC host.
@@ -28,6 +29,10 @@ Targets `net10.0` and `net11.0`.
 | Area | Operations |
 |------|-----------|
 | **DOCX** | Metrics, metadata, paragraph extraction, Markdown conversion, search, health check, metadata removal |
+| **EPUB** | Container and OPF validation, metadata, spine walk to text and Markdown; DRM and decompression bombs refused |
+| **MOBI / PalmDOC** | Palm database and MOBI header validation, EXTH metadata, PalmDOC LZ77 decompression to text and Markdown |
+| **DjVu** | IFF container walk, page count and geometry, text-layer detection, text extraction from uncompressed `TXTa` chunks |
+| **Legacy `.doc`** | OLE2 compound file reader, FIB and piece-table walk, text and Markdown from Word 97-2003 binaries |
 | **Images** | Resize, rotate, crop, convert (PNG/JPEG/WebP/BMP/GIF/TIFF), thumbnail, flip, blur, grayscale, compress, strip metadata, EXIF, auto-orient, invert, edge detect, equalize, colour palette, base64 |
 | **Email** | `.eml` (RFC 5322 / MIME) parsing — headers, body, attachment metadata |
 | **Hashing** | SHA-256, MD5, SHA-1, and a composite hash that folds in filename and size |
@@ -57,6 +62,31 @@ foreach (var match in pii.Matches)
 var score = ReadabilityService.Analyse(text, "contract.docx", language: "en");
 Console.WriteLine($"Flesch {score.FleschReadingEase:F1} — {score.Interpretation}");
 ```
+
+Ebook and legacy office formats go through one façade, which identifies the file
+from its content rather than its name and validates it before converting:
+
+```csharp
+using Aelena.FileApi.Core.Services.Documents;
+
+var book = await File.ReadAllBytesAsync("book.epub");
+
+// What is it, really? (A renamed file is the normal case, not the exception.)
+var detected = DocumentConversionService.Detect(book, "book.epub");
+Console.WriteLine($"{detected.Format}, mismatch: {detected.ExtensionMismatch}");
+
+// Every structural issue, as a report rather than a refusal
+var report = DocumentConversionService.Validate(book, "book.epub");
+foreach (var issue in report.Issues)
+    Console.WriteLine($"[{issue.Severity}] {issue.Check}: {issue.Message}");
+
+if (report.CanExtractText)
+    Console.WriteLine(DocumentConversionService.ExtractToMarkdown(book, "book.epub").Markdown);
+```
+
+Recognised-but-undecodable content is a `501`, never an empty success: DRM in
+EPUB and MOBI, HUFF/CDIC-compressed MOBI, and BZZ-compressed DjVu text layers
+each say so, and say what to do instead.
 
 Expected failures — an unsupported format, an out-of-range page, a malformed
 regex — throw `FileApiException`, which carries an HTTP status code and a

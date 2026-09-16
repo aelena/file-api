@@ -3,12 +3,12 @@
   <PropertyGroup>
     <RootNamespace>Aelena.FileApi.Core</RootNamespace>
     <PackageId>Aelena.FileApi.Core.Pdf</PackageId>
-    <Version>0.3.1</Version>
+    <Version>0.4.0</Version>
     <Authors>aelena</Authors>
-    <Description>PDF operations for Aelena.FileApi.Core, built on iText 7.
+    <Description>PDF operations for Aelena.FileApi.Core, built on iText 7 — extraction, merge, split, watermark, encryption, and Markdown typesetting for the EPUB/MOBI/DjVu/.doc converters in Aelena.FileApi.Core.
 
 IMPORTANT LICENSING NOTE: this package depends on iText 7, which is licensed under the AGPL. The AGPL is a strong copyleft licence: if you use this package in a network-facing application, that obligation extends to your application. Use iText's commercial licence if that is not acceptable. The rest of the toolkit — DOCX, images, email, hashing, PII, readability, text and ZIP — lives in Aelena.FileApi.Core, which is MIT and has no iText dependency.</Description>
-    <PackageTags>pdf;itext;document;extraction;merge;split;watermark</PackageTags>
+    <PackageTags>pdf;itext;document;extraction;merge;split;watermark;markdown</PackageTags>
     <!--
       AGPL, not MIT, and deliberately so. This package cannot be licensed more
       permissively than iText 7, the library it is built on. Aelena.FileApi.Core

@@ -29,8 +29,8 @@ Builds and tests green on **.NET 10 (LTS)** and **.NET 11 preview**.
 
 | Package | Licence | Contains | Safe for closed-source use? |
 |---------|---------|----------|------------------------------|
-| `Aelena.FileApi.Core` | **MIT** | DOCX, images, email, hashing, PII, readability, text, ZIP, share links, jobs | **Yes** |
-| `Aelena.FileApi.Core.Pdf` | **AGPL-3.0-or-later** | All PDF operations | **No** — see below |
+| `Aelena.FileApi.Core` | **MIT** | DOCX, EPUB, MOBI, DjVu, legacy `.doc`, images, email, hashing, PII, readability, text, ZIP, share links, jobs | **Yes** |
+| `Aelena.FileApi.Core.Pdf` | **AGPL-3.0-or-later** | All PDF operations, and Markdown → PDF typesetting | **No** — see below |
 | `Aelena.FileApi.Cli` (`fileapi` tool) | **AGPL-3.0-or-later** | Everything, including PDF | **No** — see below |
 
 `Aelena.FileApi.Core.Pdf` is built on [iText 7](https://itextpdf.com/), which is
@@ -74,6 +74,8 @@ absent dependency. What remains is MIT throughout.
 |---|---|---|
 | Effective licence | AGPL-3.0-or-later | MIT |
 | `/pdf/*` endpoints | 30+ routes | absent (404) |
+| `/convert/to-pdf`, `/markdown/to-pdf` | available | `501` |
+| `/convert/*` (text, Markdown, validate) | available | available |
 | `fileapi pdf …` | available | absent from `--help` |
 | gRPC PDF methods | available | `Unimplemented` status |
 | Everything else | available | available |
@@ -90,9 +92,11 @@ Full detail, including the terms of every dependency, is in
 ```
          ┌──────────────────┐   ┌────────────────────────┐
          │  Core (MIT)      │◄──│  Core.Pdf (AGPL)       │
-         │  DOCX, images,   │   │  PDF only — iText 7    │
-         │  email, hash,    │   │  Separated so that     │
-         │  PII, text, zip  │   │  Core stays MIT        │
+         │  DOCX, EPUB,     │   │  PDF only — iText 7    │
+         │  MOBI, DjVu,     │   │  plus Markdown → PDF   │
+         │  .doc, images,   │   │  Separated so that     │
+         │  email, hash,    │   │  Core stays MIT        │
+         │  PII, text, zip  │   │                        │
          └────────┬─────────┘   └───────────┬────────────┘
                   │                         │
                   └───────────┬─────────────┘
@@ -120,6 +124,8 @@ Full detail, including the terms of every dependency, is in
 |----------|-------------|--------|
 | **PDF Toolkit** | 30+ operations: metrics, metadata, extract text/pages/markdown/annotations/bookmarks, merge, split, rotate, reorder, delete pages, watermark, encrypt/decrypt, compress, page numbers, form fields, health check | Implemented |
 | **DOCX Processing** | Metrics, metadata, paragraph extraction, markdown conversion, search, health check, metadata removal | Implemented |
+| **Ebook & Legacy Conversion** | EPUB, MOBI/PalmDOC, DjVu and legacy binary `.doc` — content-based detection, structural validation, metadata, text, Markdown and PDF | Implemented; DjVu text limited to uncompressed layers |
+| **Markdown → PDF** | Headings, lists, tables, block quotes, code blocks, rules and inline emphasis, typeset with iText | Implemented |
 | **Image Processing** | Resize, rotate, crop, convert (PNG/JPEG/WebP/BMP/GIF/TIFF), thumbnail, flip, blur, grayscale, compress, strip metadata, EXIF, auto-orient, invert, edge detect, equalize, color palette, base64 | Implemented |
 | **PII Detection** | Regex-based scanning for emails, credit cards (Visa/MC/Amex), IBANs, SSNs, phone numbers, national IDs (US/ES/FR/DE/IT/UK/PT), dates of birth | Implemented |
 | **Text Analysis** | Metrics, search (literal + regex), readability scores (Flesch, Gunning Fog, SMOG) | Implemented |
@@ -134,7 +140,7 @@ Full detail, including the terms of every dependency, is in
 | **Geospatial** | KML, KMZ, GeoJSON, Shapefile, DXF feature extraction | Endpoint stubs; NetTopologySuite integration pending |
 | **Video** | Container/track metadata extraction | Stub; MediaInfo integration pending |
 
-## Endpoint Families (~100 routes)
+## Endpoint Families (~110 routes)
 
 | Family | Prefix | Routes | Description |
 |--------|--------|--------|-------------|
@@ -159,9 +165,100 @@ Full detail, including the terms of every dependency, is in
 | Share | `/share/*` | 4 | Shareable report links |
 | Geospatial | `/geospatial/*` | 4 | Feature extraction from geo formats |
 | Video | `/video/metadata` | 1 | Container/track metadata |
-| Markdown | `/markdown/to-pdf` | 1 | Markdown to PDF conversion |
+| Markdown | `/markdown/to-pdf` | 1 | Markdown to PDF typesetting |
+| Convert | `/convert/*` | 8 | EPUB, MOBI, DjVu and legacy `.doc` → text, Markdown, PDF |
 | Strip | `/strip/images` | 1 | Remove images from documents |
 | Redact | `/redact`, `/pdf/redact` | 2 | Text redaction — **not implemented, returns 501** |
+
+## Converting EPUB, MOBI, DjVu and legacy `.doc`
+
+Four formats with no toolkit of their own, behind one group at `/convert`. The
+endpoints sniff the upload, check its structure, and only then convert.
+
+| Route | Returns |
+|---|---|
+| `POST /convert/detect` | What the file actually is, whether the extension agrees, and what can be done with it |
+| `POST /convert/validate` | Every structural issue found, as errors, warnings and info — a report, never a refusal |
+| `POST /convert/metadata` | Title, authors, language, publisher, identifier, subjects, plus per-format container detail |
+| `POST /convert/text` | Extracted text, split into the sections the source format defines |
+| `POST /convert/markdown` | The whole document as one Markdown string |
+| `POST /convert/to-txt` | The same text as a `.txt` download |
+| `POST /convert/to-md` | The same Markdown as a `.md` download |
+| `POST /convert/to-pdf` | The document typeset as a PDF (absent under `-p:IncludePdf=false`) |
+
+### Detection is by content, never by extension
+
+A renamed file is the normal case, not the exception, and dispatching on the
+extension is how a `.zip` renamed to `.epub` becomes a 500 from inside a parser.
+Every route sniffs the magic bytes first. `/convert/detect` reports the
+disagreement without refusing the file; the conversion routes act on what the
+content says and name the mismatch in the error if they refuse.
+
+### Validation runs before conversion, and reports rather than refuses
+
+`POST /convert/validate` always answers `200` with a list of issues. What is
+checked depends on the format:
+
+- **EPUB** — the `mimetype` entry's content, position and compression;
+  `META-INF/container.xml` and the rootfile it names; the OPF's manifest and
+  spine, including items that do not resolve to a file in the archive; DRM
+  (`META-INF/encryption.xml`); and entry-count, total-size and
+  compression-ratio limits, so a decompression bomb is refused from the central
+  directory without inflating anything.
+- **MOBI / PalmDOC** — the Palm database type and creator; the record table's
+  bounds and monotonicity; the PalmDOC header's compression, encryption and
+  declared text length against the records that actually exist.
+- **DjVu** — the `AT&TFORM` signature and form type; the declared container
+  length against the file; every IFF chunk's bounds as the walk descends; and
+  whether the pages carry a text layer, and in which form.
+- **DOC** — the OLE2 header and FAT (every chain walk bounded, so a cyclic FAT
+  answers `422` instead of hanging the request); the `WordDocument` stream; the
+  FIB's magic, version and encryption flag; and the piece table's own bounds.
+
+### Three different failures, three different status codes
+
+The contract is that a caller can tell these apart from the response alone:
+
+| Status | Means |
+|---|---|
+| `415` | Recognised, but not a format this group reads. The message names what the file is and points at `/pdf/*`, `/docx/*` or `/zip/inspect` where one of those is the right home |
+| `422` | The right format, structurally broken — or well-formed with nothing to extract, such as a DjVu that is page images with no OCR |
+| `501` | Well-formed and readable, but locked or compressed in a scheme this service does not decode |
+
+### What is deliberately not supported
+
+Each of these answers `501` with the reason, rather than returning an empty
+success:
+
+- **DjVu text layers in `TXTz` chunks.** `TXTz` is BZZ-compressed, and BZZ needs
+  the ZP adaptive arithmetic coder whose only published implementation is
+  DjVuLibre's — which is GPL, and cannot be vendored into an MIT package. The
+  uncompressed `TXTa` form is read. Everything else about a DjVu — page count,
+  geometry, resolution, structure — is available whatever the text layer looks
+  like, and `/convert/validate` says which form a given file uses. For the text
+  itself, `djvutxt` from DjVuLibre.
+- **HUFF/CDIC-compressed MOBI**, which later Kindle files use. Uncompressed and
+  PalmDOC-compressed MOBI are read.
+- **DRM**, in both EPUB and MOBI. Metadata is still readable and still returned;
+  only the content is refused.
+- **Word 6.0/95 `.doc`** (`nFib` below `0x00C1`), whose FIB has a different
+  layout. Re-saving in any later Word version produces a file this reads.
+
+### PDF output is Windows-1252
+
+iText's built-in fonts carry no Unicode glyphs and embedding a font would mean
+shipping one, so `/convert/to-pdf` and `/markdown/to-pdf` transliterate:
+accented letters outside CP1252 lose their accent, and characters with no ASCII
+reading become `?`. A book in a non-Latin script will convert to a PDF of
+question marks. `/convert/to-md` is UTF-8 and loses nothing.
+
+### `.doc` Markdown is paragraph-level
+
+The reader walks the piece table for the text, but does not read the style
+sheet, so headings in the Markdown are inferred from shape — the same
+compromise the PDF Markdown extractor makes. Word's in-band control characters
+(paragraph and cell marks, field codes, picture placeholders) are resolved
+rather than passed through.
 
 ## Authentication
 
@@ -236,9 +333,9 @@ dotnet test
 
 | Suite | Tests | Frameworks | Executions |
 |-------|-------|-----------|-----------|
-| `Aelena.FileApi.Tests` (unit, concurrency) | 193 | net10.0, net11.0 | 386 |
-| `Aelena.FileApi.Api.Tests` (endpoint, error-contract, auth, share) | 97 | net10.0, net11.0 | 194 |
-| **Main solution total** | **290** | | **580** |
+| `Aelena.FileApi.Tests` (unit, concurrency, conversion) | 261 | net10.0, net11.0 | 522 |
+| `Aelena.FileApi.Api.Tests` (endpoint, error-contract, auth, share) | 126 | net10.0, net11.0 | 252 |
+| **Main solution total** | **387** | | **774** |
 | `Aelena.FileApi.Grpc.Tests` (separate solution) | 8 | net10.0, net11.0 | 16 |
 
 To run a single framework: `dotnet test -f net10.0`.
@@ -292,6 +389,14 @@ fileapi image convert --format webp photo.png  # Format conversion
 fileapi image grayscale photo.jpg         # Grayscale
 fileapi image blur --radius 5 photo.jpg   # Gaussian blur
 fileapi image compress --quality 60 photo.jpg  # JPEG compression
+
+# EPUB / MOBI / DjVu / legacy .doc
+fileapi convert detect mystery-file            # Identify it from its content
+fileapi convert validate book.epub             # Structural checks, every issue listed
+fileapi convert metadata book.mobi             # Title, authors, language, publisher
+fileapi convert text book.epub > book.txt      # Plain text to stdout
+fileapi convert markdown report.doc -o out.md  # Markdown to a file
+fileapi convert pdf book.epub -o book.pdf      # Typeset as PDF
 
 # Utilities
 fileapi hash invoice.pdf                  # SHA-256, MD5, SHA-1
