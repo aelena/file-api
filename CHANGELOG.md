@@ -4,7 +4,37 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2]
+
+What 0.4.1 was meant to be. Same documentation changes, plus the fix for the
+reason 0.4.1 did not ship, and a CI gate so the same class of failure cannot
+reach a tag again.
+
+### Fixed
+
+- **`Aelena.FileApi.Core`'s README held a `0x08` byte** and nuget.org rejected
+  the package with *"The readme file must be plain text using UTF-8 encoding."*
+  A regex word boundary in a text-search example had reached the file as a
+  literal backspace rather than the two characters it should have been. The C#
+  compiled — a verbatim string accepts any character — so extracting and
+  building the examples, which is what caught four other errors, could not catch
+  this one. Only a byte-level check could.
+
+### Added
+
+- **CI now asserts that every packed README is plain UTF-8 text**, with no
+  control bytes beyond tab, newline and carriage return. nuget.org enforces this
+  at push time, which is after the tag and after every other gate has passed —
+  the worst place to discover it. The check is in the `packages` job, so it runs
+  on every push and pull request rather than only on a release.
+
 ## [0.4.1]
+
+**Published `Aelena.FileApi.Cli` only.** The push is a single
+`dotnet nuget push` over all three packages in glob order; the CLI went up, the
+Core package was rejected on its README encoding, and the step aborted before
+`Core.Pdf` was attempted. NuGet versions are immutable and the CLI's 0.4.1 is
+live, so the other two skip to 0.4.2 rather than a pushed tag being moved.
 
 Documentation only. No code changed; this exists because the README that appears
 on a package's nuget.org listing page is the one packed at release time, and

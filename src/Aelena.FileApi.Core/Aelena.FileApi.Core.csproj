@@ -3,7 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Aelena.FileApi.Core</RootNamespace>
     <PackageId>Aelena.FileApi.Core</PackageId>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <Authors>aelena</Authors>
     <Description>Pure document processing library — DOCX, EPUB, MOBI, DjVu, legacy .doc, image, email, hash, PII, readability, text and ZIP. Reads ebook and legacy office containers down to text and Markdown, with structural validation before any conversion is attempted. Zero ASP.NET dependencies, MIT licensed, no copyleft dependencies. PDF operations live in Aelena.FileApi.Core.Pdf, which is AGPL because iText 7 is.</Description>
     <PackageTags>document;docx;epub;mobi;djvu;doc;markdown;image;email;hash;pii;readability;zip</PackageTags>

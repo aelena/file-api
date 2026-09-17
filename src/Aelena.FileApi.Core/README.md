@@ -178,7 +178,7 @@ var score = ReadabilityService.Analyse(text, "contract.txt", language: "en");
 Console.WriteLine($"Flesch {score.FleschReadingEase:F1} — {score.Interpretation}");
 
 // Literal or regex search, with context around each hit.
-var (_, matches) = TxtService.Search(bytes, "contract.txt", pattern: @"[A-Z]{2,}");
+var (_, matches) = TxtService.Search(bytes, "contract.txt", pattern: @"\b[A-Z]{2,}\b");
 Console.WriteLine($"{matches.Count} acronym(s)");
 ```
 

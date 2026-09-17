@@ -149,6 +149,52 @@ jobs:
           print("OK: MIT package is free of iText")
           EOF
 
+      # nuget.org refuses a package whose README is not plain UTF-8 text, and it
+      # refuses it at push time — after the tag, after every other gate has
+      # passed. That is the worst possible place to find out, so the same rule is
+      # enforced here. 0.4.1 was rejected for a single 0x08 byte that reached the
+      # file as an escape in a regex example; the C# compiled, because a verbatim
+      # string accepts any character, so only a byte-level check catches it.
+      - name: Assert every packed README is plain UTF-8 text
+        shell: bash
+        run: |
+          python3 - <<'EOF'
+          import glob, sys, zipfile
+
+          ALLOWED = {0x09, 0x0A, 0x0D}   # tab, newline, carriage return
+          failed = False
+
+          for pkg in sorted(glob.glob("artifacts/*.nupkg")):
+              z = zipfile.ZipFile(pkg)
+              readmes = [n for n in z.namelist() if n.lower().endswith("readme.md")]
+              if not readmes:
+                  print(f"{pkg}: no README packed")
+                  continue
+
+              for name in readmes:
+                  raw = z.read(name)
+                  try:
+                      raw.decode("utf-8", errors="strict")
+                  except UnicodeDecodeError as e:
+                      print(f"::error::{pkg} ({name}) is not valid UTF-8: {e}")
+                      failed = True
+                      continue
+
+                  bad = {b for b in raw if b < 0x20 and b not in ALLOWED} | {0x7F} & set(raw)
+                  if bad:
+                      where = next(i for i, b in enumerate(raw) if b in bad)
+                      line = raw[:where].count(b"\n") + 1
+                      print(f"::error::{pkg} ({name}) holds control byte(s) "
+                            f"{sorted(hex(b) for b in bad)}, first at line {line}. "
+                            "nuget.org will reject this package.")
+                      failed = True
+                      continue
+
+                  print(f"OK: {pkg} ({name}) {len(raw)} bytes, plain UTF-8")
+
+          sys.exit(1 if failed else 0)
+          EOF
+
       - name: Upload packages
         uses: actions/upload-artifact@v7
         with:
