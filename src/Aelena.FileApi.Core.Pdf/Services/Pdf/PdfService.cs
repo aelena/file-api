@@ -183,13 +183,17 @@ public static partial class PdfService
         var fields = new List<FormField>();
         foreach (var (name, field) in form.GetAllFormFields())
         {
-            var formType = field.GetFormType()?.GetValue() ?? "";
+            // PdfName.GetValue() returns the name without its leading solidus,
+            // so these are "Tx" and not "/Tx". Matching on the slashed form
+            // silently reported every field in every document as "unknown";
+            // the trim keeps both spellings working whichever iText returns.
+            var formType = (field.GetFormType()?.GetValue() ?? "").TrimStart('/');
             var fieldType = formType switch
             {
-                "/Tx" => "text",
-                "/Btn" => "checkbox",
-                "/Ch" => "dropdown",
-                "/Sig" => "signature",
+                "Tx" => "text",
+                "Btn" => "checkbox",
+                "Ch" => "dropdown",
+                "Sig" => "signature",
                 _ => "unknown"
             };
 

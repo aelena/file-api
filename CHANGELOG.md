@@ -4,6 +4,27 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`/pdf/form-fields` reported every field as `"unknown"`.** The type switch
+  compared against `"/Tx"`, `"/Btn"`, `"/Ch"` and `"/Sig"`, but
+  `PdfName.GetValue()` returns the name *without* its leading solidus, so no
+  arm ever matched. Every text box, checkbox, dropdown and signature field in
+  every document came back untyped. Found by writing the first real test for
+  the method, which had 16% coverage.
+
+### Tests
+
+- `PdfServiceOperationTests` covers the half of `PdfService` that needs a
+  document with structure in it — outlines, annotations, form fields, embedded
+  images, encryption, mixed page geometry — plus page numbering, blank-page
+  insertion, page extraction, metadata removal and unlocking. 30 new tests,
+  386 → 416 in the suite.
+- `PdfService.cs` line coverage 63.8% → 94.4%; hand-written code across the
+  repository 75.5% → 79.3%.
+
 ## [0.4.2]
 
 What 0.4.1 was meant to be. Same documentation changes, plus the fix for the
