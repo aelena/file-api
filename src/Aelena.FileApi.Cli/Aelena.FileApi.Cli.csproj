@@ -19,7 +19,7 @@
     <ToolCommandName>fileapi</ToolCommandName>
     <PackageId>Aelena.FileApi.Cli</PackageId>
     <Title>FileApi CLI</Title>
-    <Version>0.4.2</Version>
+    <Version>0.4.3</Version>
     <Authors>aelena</Authors>
     <Description>Command-line document processing: PDF, DOCX, EPUB, MOBI, DjVu, legacy .doc, images, email, hashing, PII detection, readability and ZIP inspection. Installs the `fileapi` command.
 
