@@ -408,6 +408,76 @@ fileapi zip archive.zip                   # List entries with sizes
 fileapi email message.eml                 # Parse headers, body, attachments
 ```
 
+### Exit codes
+
+Failures print one line on stderr — not a stack trace — and set a code you can
+branch on:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | The operation failed unexpectedly |
+| `2` | Bad input file or arguments |
+| `3` | Operation not implemented for this format |
+| `4` | Could not read or write a file |
+
+Diagnostics go to stderr, so `fileapi convert markdown book.epub > book.md`
+captures the document and not the warnings.
+
+### Batch conversion
+
+The codes are distinct enough to branch on, which is what makes the tool usable
+from a script. Converting a folder of assorted documents to Markdown, keeping
+aside the ones that cannot be converted and saying why:
+
+```bash
+#!/usr/bin/env bash
+mkdir -p out skipped
+
+for f in inbox/*; do
+  name=$(basename "$f")
+  stem="${name%.*}"; ext="${name##*.}"
+
+  # The source extension goes into the output name: three formats of the same
+  # document would otherwise all want to be "$stem.md".
+  fileapi convert markdown "$f" > "out/$stem.$ext.md" 2>/dev/null
+  status=$?
+
+  if [ $status -eq 0 ]; then
+    echo "converted  $name"
+    continue
+  fi
+
+  rm -f "out/$stem.$ext.md"
+  cp "$f" skipped/
+
+  case $status in
+    2) echo "unreadable $name — broken, or nothing to extract" ;;
+    3) echo "locked     $name — DRM, or a codec this build cannot decode" ;;
+    *) echo "failed     $name (exit $status)" ;;
+  esac
+done
+```
+
+Capture `$?` into a variable before testing it: after an `if`, `$?` is the
+status of the branch that ran, not of the command in the condition.
+
+Run against this repository's own test fixtures, that prints:
+
+```
+unreadable hr-report-94-1476-p249.djvu — broken, or nothing to extract
+converted  public-domain-pieces.doc
+converted  public-domain-pieces.epub
+converted  public-domain-pieces.mobi
+locked     un-resolution-1837.djvu — DRM, or a codec this build cannot decode
+```
+
+Both DjVu files are perfectly valid, and they fail differently on purpose. The
+first is a page scan with no OCR layer at all, so there is no text to extract.
+The second has one, BZZ-compressed, which this build does not decode — see
+[LICENSING.md](LICENSING.md) for why. `fileapi convert validate` on either says
+so in full, and the message on stderr says which happened.
+
 ## Configuration
 
 All settings via environment variables or `appsettings.json` (section `AppSettings`):
