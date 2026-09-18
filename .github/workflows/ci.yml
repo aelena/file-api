@@ -95,6 +95,48 @@ jobs:
           path: ./TestResults
           retention-days: 7
 
+  # Formatting and code style, checked rather than merely configured.
+  #
+  # EnforceCodeStyleInBuild already fails the build on the IDExxxx rules, but it
+  # only sees what the compiler compiles: using-directive order, final newlines
+  # and whitespace in files the analyzers skip slip past it. `dotnet format`
+  # applies the whole .editorconfig and reports anything it would have changed,
+  # which is the job ruff and black do on the Python side.
+  lint:
+    name: lint (format + style)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+          dotnet-quality: preview
+
+      - name: Restore
+        run: dotnet restore Aelena.FileApi.sln
+
+      # --verify-no-changes makes this a gate: it exits non-zero and prints
+      # every file it would have touched, instead of rewriting the tree.
+      - name: Verify formatting
+        run: |
+          dotnet format Aelena.FileApi.sln --verify-no-changes --no-restore --verbosity diagnostic             || {
+              echo "::error::Formatting differs from .editorconfig. Run: dotnet format Aelena.FileApi.sln"
+              exit 1
+            }
+
+      - name: Verify the gRPC minirepo too
+        run: |
+          dotnet restore grpc/Aelena.FileApi.Grpc.sln
+          dotnet format grpc/Aelena.FileApi.Grpc.sln --verify-no-changes --no-restore             || {
+              echo "::error::Formatting differs in grpc/. Run: dotnet format grpc/Aelena.FileApi.Grpc.sln"
+              exit 1
+            }
+
   packages:
     name: packages
     runs-on: ubuntu-latest

@@ -13,11 +13,11 @@ using iText.Kernel.Pdf.Navigation;
 using iText.Layout;
 using iText.Layout.Element;
 using SixLabors.ImageSharp;
-// SixLabors and iText both define Rectangle; the PDF one wins here.
-using Rectangle = iText.Kernel.Geom.Rectangle;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
+// SixLabors and iText both define Rectangle; the PDF one wins here.
+using Rectangle = iText.Kernel.Geom.Rectangle;
 
 namespace Aelena.FileApi.Tests.Services;
 

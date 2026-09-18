@@ -1,0 +1,213 @@
+name: Security
+
+# Dependency and code scanning, in the shape OWASP Dependency-Check has on other
+# stacks. Dependency-Check itself is not used here: it needs an NVD API key and a
+# multi-gigabyte database cache to be anything but slow, and its .NET analyzer
+# reads assemblies rather than the package graph — so on a NuGet project it sees
+# less than the tooling below, not more. What it does for you is covered by four
+# things that need no secrets:
+#
+#   1. `dotnet list package --vulnerable`  — the package graph against the GitHub
+#      Advisory Database, transitives included. NuGetAudit already fails restore
+#      on these; this repeats it as a readable report, and as a gate that still
+#      works if someone sets NuGetAudit=false to get a build through.
+#   2. Trivy                               — the same graph plus the filesystem,
+#      against its own vulnerability feed, so a finding that has not reached the
+#      NuGet advisory feed yet is still caught.
+#   3. CycloneDX SBOM                      — the inventory, published as an
+#      artifact so what shipped can be audited after the fact.
+#   4. CodeQL                              — static analysis of the C# itself,
+#      which is the half of "security scanning" no dependency tool covers.
+#
+# Findings go to the Security tab as SARIF rather than only to a log.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+  schedule:
+    # Monday 06:17 UTC. A new advisory against an unchanged dependency is the
+    # normal case, so this cannot only run when something is pushed.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  # ── Package graph ─────────────────────────────────────────────────────
+  dependencies:
+    name: dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+          dotnet-quality: preview
+
+      - name: Restore
+        run: |
+          dotnet restore Aelena.FileApi.sln
+          dotnet restore grpc/Aelena.FileApi.Grpc.sln
+
+      # Fails the job on any advisory at any severity, transitives included.
+      # The threshold is deliberately "any": this library is handed untrusted
+      # files by design, so a low-severity parser bug in a dependency is not a
+      # low-severity problem here.
+      - name: Vulnerable packages
+        shell: bash
+        run: |
+          set -o pipefail
+          report=$(dotnet list Aelena.FileApi.sln package --vulnerable --include-transitive 2>&1)
+          echo "$report"
+
+          if echo "$report" | grep -qiE '^[[:space:]]+> '; then
+            echo "::error::Vulnerable package(s) found. See the table above."
+            exit 1
+          fi
+          echo "OK: no vulnerable packages"
+
+      # Deprecation is not a vulnerability and must not block a build, but it is
+      # how a package stops receiving fixes, so it is surfaced every run.
+      - name: Deprecated packages
+        continue-on-error: true
+        shell: bash
+        run: |
+          report=$(dotnet list Aelena.FileApi.sln package --deprecated 2>&1)
+          echo "$report"
+
+          if echo "$report" | grep -qiE '^[[:space:]]+> '; then
+            echo "::warning::Deprecated package(s) in use. See the table above."
+          fi
+
+      - name: Outdated packages
+        continue-on-error: true
+        run: dotnet list Aelena.FileApi.sln package --outdated
+
+  # ── Inventory and vulnerability feed ──────────────────────────────────
+  sbom:
+    name: SBOM + Trivy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+          dotnet-quality: preview
+
+      - name: Generate a CycloneDX SBOM
+        run: |
+          dotnet tool install --global CycloneDX
+          dotnet CycloneDX Aelena.FileApi.sln -o ./sbom --json --filename sbom.json
+
+      - name: Upload the SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: ./sbom/sbom.json
+          retention-days: 90
+
+      # Trivy reads the SBOM rather than re-resolving the graph, so what is
+      # scanned is exactly what was published as the inventory.
+      - name: Scan the SBOM
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: sbom
+          scan-ref: ./sbom/sbom.json
+          format: sarif
+          output: trivy.sarif
+          severity: LOW,MEDIUM,HIGH,CRITICAL
+
+      - name: Publish the findings
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+
+      # Separate from the SARIF upload: the upload records findings, this one
+      # decides whether the build fails. High and critical stop it; lower
+      # severities are recorded and reviewed rather than blocking.
+      - name: Fail on high or critical
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: sbom
+          scan-ref: ./sbom/sbom.json
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  # ── The code itself ───────────────────────────────────────────────────
+  codeql:
+    name: CodeQL (C#)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+          dotnet-quality: preview
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          # security-extended adds the rules that are high-signal but slower;
+          # worth it on a codebase whose whole job is parsing hostile input.
+          queries: security-extended
+
+      # A manual build: CodeQL's autobuilder picks one target framework and can
+      # miss projects behind a condition, and -p:IncludePdf=true is what ships.
+      - name: Build
+        run: dotnet build Aelena.FileApi.sln -c Release -p:TargetFrameworks=net10.0
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: csharp
+
+  # ── Pull requests ─────────────────────────────────────────────────────
+  # Blocks a pull request that introduces a vulnerable or badly-licensed
+  # dependency, before it is merged rather than after.
+  dependency-review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: low
+          # The licence boundary this repository maintains by hand: the MIT
+          # package must not acquire a copyleft dependency. AGPL is allowed
+          # overall because Core.Pdf is deliberately AGPL; CI's own
+          # licence-boundary assertion is what keeps it out of Core.
+          deny-licenses: GPL-2.0, GPL-3.0, LGPL-2.1, LGPL-3.0
+          comment-summary-in-pr: on-failure

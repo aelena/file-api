@@ -1,7 +1,7 @@
 # FileApi — Document Processing & AI Analysis Platform
 
 [![CI](https://github.com/aelena/file-api/actions/workflows/ci.yml/badge.svg)](https://github.com/aelena/file-api/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-580%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-1060%20passing-brightgreen)]()
 [![.NET](https://img.shields.io/badge/.NET-10.0%20%7C%2011.0-512BD4)]()
 
 | Package | Version | Downloads | Licence |
@@ -29,7 +29,7 @@ Builds and tests green on **.NET 10 (LTS)** and **.NET 11 preview**.
 
 | Package | Licence | Contains | Safe for closed-source use? |
 |---------|---------|----------|------------------------------|
-| `Aelena.FileApi.Core` | **MIT** | DOCX, EPUB, MOBI, DjVu, legacy `.doc`, images, email, hashing, PII, readability, text, ZIP, share links, jobs | **Yes** |
+| `Aelena.FileApi.Core` | **MIT** | DOCX, XLSX, PPTX, CSV, EPUB, MOBI, DjVu, legacy `.doc`, `.msg`, images, email, hashing, PII, readability, text encoding, ZIP, share links, jobs | **Yes** |
 | `Aelena.FileApi.Core.Pdf` | **AGPL-3.0-or-later** | All PDF operations, and Markdown → PDF typesetting | **No** — see below |
 | `Aelena.FileApi.Cli` (`fileapi` tool) | **AGPL-3.0-or-later** | Everything, including PDF | **No** — see below |
 
@@ -92,10 +92,12 @@ Full detail, including the terms of every dependency, is in
 ```
          ┌──────────────────┐   ┌────────────────────────┐
          │  Core (MIT)      │◄──│  Core.Pdf (AGPL)       │
-         │  DOCX, EPUB,     │   │  PDF only — iText 7    │
-         │  MOBI, DjVu,     │   │  plus Markdown → PDF   │
-         │  .doc, images,   │   │  Separated so that     │
-         │  email, hash,    │   │  Core stays MIT        │
+         │  DOCX, XLSX,     │   │  PDF only — iText 7    │
+         │  PPTX, CSV,      │   │  plus Markdown → PDF   │
+         │  EPUB, MOBI,     │   │  Separated so that     │
+         │  DjVu, .doc,     │   │  Core stays MIT        │
+         │  .msg, images,   │   │                        │
+         │  email, hash,    │   │                        │
          │  PII, text, zip  │   │                        │
          └────────┬─────────┘   └───────────┬────────────┘
                   │                         │
@@ -572,6 +574,48 @@ first is a page scan with no OCR layer at all, so there is no text to extract.
 The second has one, BZZ-compressed, which this build does not decode — see
 [LICENSING.md](LICENSING.md) for why. `fileapi convert validate` on either says
 so in full, and the message on stderr says which happened.
+
+## CI gates
+
+Every push and pull request runs these; a release tag runs the same workflow
+rather than a copy of it, so the release gate cannot drift from the merge gate.
+
+| Gate | What it refuses |
+|---|---|
+| `build` (ubuntu + windows) | Anything that does not compile or test clean on net10.0 **and** net11.0 |
+| `lint (format + style)` | Formatting that differs from `.editorconfig`, including using-directive order — `dotnet format --verify-no-changes`, the job ruff and black do elsewhere |
+| `packages` | A packed README that is not plain UTF-8, a raw control byte in any source file, and any iText reference reaching the MIT package |
+| `MIT-only build` | A `-p:IncludePdf=false` build that fails, or ships an iText assembly anyway |
+| `docker` | An image that does not build |
+
+`EnforceCodeStyleInBuild` and `TreatWarningsAsErrors` already fail the build on
+the analyzer rules, so the `lint` job is not duplicating them — it catches what
+the compiler never sees, which in practice is import ordering and whitespace in
+files the analyzers skip.
+
+### Security scanning
+
+A separate `Security` workflow runs on push, on pull requests and weekly,
+because a new advisory against an unchanged dependency is the normal case and
+cannot wait for someone to push.
+
+| Job | Covers |
+|---|---|
+| `dependency audit` | `dotnet list package --vulnerable --include-transitive`, failing on **any** severity. Deprecated and outdated packages are reported without blocking |
+| `SBOM + Trivy` | A CycloneDX SBOM published as a build artifact, then scanned — findings to the Security tab, high and critical failing the build |
+| `CodeQL (C#)` | Static analysis of the code itself with `security-extended`, which no dependency scanner covers |
+| `dependency review` | Blocks a pull request that introduces a vulnerable or copyleft-licensed dependency before it merges |
+
+**Why not OWASP Dependency-Check itself.** It needs an NVD API key and a
+multi-gigabyte database cache to be anything other than slow, and its .NET
+analyzer inspects compiled assemblies rather than the package graph — so on a
+NuGet project it sees *less* than `dotnet list package --vulnerable` and Trivy
+do between them, not more. The four jobs above cover what it would have told
+you, need no secrets, and put their findings in the Security tab.
+
+The severity threshold on the dependency audit is deliberately "any, including
+low". This library is handed untrusted files by design, so a low-severity
+parsing bug in a dependency is not a low-severity problem here.
 
 ## Configuration
 

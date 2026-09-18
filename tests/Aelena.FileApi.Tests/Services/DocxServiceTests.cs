@@ -1,9 +1,9 @@
 using Aelena.FileApi.Core.Errors;
 using Aelena.FileApi.Core.Services.Docx;
+using AwesomeAssertions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
-using AwesomeAssertions;
 using Xunit;
 
 namespace Aelena.FileApi.Tests.Services;

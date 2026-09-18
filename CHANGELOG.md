@@ -4,6 +4,34 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — CI
+
+- **A `lint` gate.** `dotnet format --verify-no-changes` over both solutions,
+  which is the job ruff and black do on the Python side.
+  `EnforceCodeStyleInBuild` already fails the build on the analyzer rules, but
+  it only sees what the compiler compiles; using-directive order and whitespace
+  in skipped files went past it. Four files were already out of line and are
+  fixed.
+- **A `Security` workflow** — on push, on pull requests, and weekly, because a
+  new advisory against an unchanged dependency does not wait for a push.
+  - `dotnet list package --vulnerable --include-transitive`, failing on any
+    severity. Deprecated and outdated packages are reported without blocking;
+    this currently surfaces that `xunit 2.9.3` is deprecated in favour of
+    xunit.v3.
+  - A CycloneDX SBOM (119 components, with licences) published as an artifact,
+    then scanned by Trivy. Findings go to the Security tab as SARIF; high and
+    critical fail the build.
+  - CodeQL for C# with `security-extended`.
+  - Dependency review on pull requests, refusing vulnerable or copyleft
+    dependencies before they merge.
+
+  OWASP Dependency-Check itself is not used, and the workflow says why: it needs
+  an NVD API key and a large database cache, and its .NET analyzer reads
+  assemblies rather than the package graph, so on a NuGet project it sees less
+  than the above rather than more.
+
 ## [0.4.4]
 
 Spreadsheets, presentations, delimited files, text encoding, and Outlook
