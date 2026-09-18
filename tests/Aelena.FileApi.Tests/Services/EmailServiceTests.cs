@@ -60,11 +60,14 @@ public class EmailServiceTests
     }
 
     [Fact]
-    public void Parse_MsgFormat_ThrowsNotImplemented()
+    public void Parse_MsgFormat_IsReadRatherThanRefused()
     {
+        // This pinned the 501 that .msg answered while the README advertised
+        // support for it. Parsing now goes through MsgService; an empty buffer
+        // is a malformed file, which is a 422 like any other.
         FluentActions.Invoking(() => EmailService.Parse([], "file.msg"))
             .Should().Throw<FileApiException>()
-            .Where(e => e.StatusCode == 501);
+            .Where(e => e.StatusCode == 422);
     }
 
     [Fact]

@@ -1,8 +1,8 @@
 # Aelena.FileApi.Core
 
-Pure document processing for .NET — DOCX, EPUB, MOBI, DjVu, legacy `.doc`,
-images, email, hashing, PII detection, readability, text analysis and ZIP
-inspection.
+Pure document processing for .NET — DOCX, XLSX, PPTX, EPUB, MOBI, DjVu, legacy
+`.doc`, CSV, images, email, hashing, PII detection, readability, text analysis
+and ZIP inspection.
 
 No ASP.NET dependencies and no copyleft dependencies, so it works equally well in
 a console app, a desktop app, an Azure Function, or behind an HTTP or gRPC host.
@@ -29,15 +29,19 @@ Targets `net10.0` and `net11.0`.
 | Area | Operations |
 |------|-----------|
 | **DOCX** | Metrics, metadata, paragraph extraction, Markdown conversion, search, health check, metadata removal |
+| **XLSX** | Metrics, sheets, cell values with shared strings resolved, CSV and Markdown conversion, metadata, search, plus audits for external links, risky formulas and hidden sheets/rows/columns |
+| **PPTX** | Slides in presentation order, speaker notes, Markdown outline, metrics, metadata, search |
+| **CSV** | Dialect sniffing, load validation, column profiling, JSON and Markdown conversion |
 | **EPUB** | Container and OPF validation, metadata, spine walk to text and Markdown; DRM and decompression bombs refused |
 | **MOBI / PalmDOC** | Palm database and MOBI header validation, EXTH metadata, PalmDOC LZ77 decompression to text and Markdown |
 | **DjVu** | IFF container walk, page count and geometry, text-layer detection, text extraction from uncompressed `TXTa` chunks |
 | **Legacy `.doc`** | OLE2 compound file reader, FIB and piece-table walk, text and Markdown from Word 97-2003 binaries |
 | **Images** | Resize, rotate, crop, convert (PNG/JPEG/WebP/BMP/GIF/TIFF), thumbnail, flip, blur, grayscale, compress, strip metadata, EXIF, auto-orient, invert, edge detect, equalize, colour palette, base64 |
-| **Email** | `.eml` (RFC 5322 / MIME) parsing — headers, body, attachment metadata |
+| **Email** | `.eml` (RFC 5322 / MIME) via MimeKit, and `.msg` (Outlook) read from its OLE2 container — headers, body, recipients, attachments |
 | **Hashing** | SHA-256, MD5, SHA-1, and a composite hash that folds in filename and size |
 | **PII** | Emails, credit cards, IBANs, SSNs, phone numbers, national IDs (US, ES, FR, DE, IT, UK, PT), dates of birth |
 | **Text** | Word/char/token counts, language detection, literal and regex search with context |
+| **Encoding** | Encoding and BOM detection, line endings, control-byte location with line and column, normalisation to clean UTF-8 |
 | **Readability** | Flesch Reading Ease, Flesch-Kincaid, Gunning Fog, SMOG |
 | **ZIP** | Entry listing with sizes, compression and CRC-32, without extracting |
 | **Persistence** | SQLite-backed share links; a bounded in-memory job store |
@@ -125,6 +129,79 @@ foreach (var path in Directory.EnumerateFiles("inbox"))
 Recognised-but-undecodable content raises a `501`, never an empty success: DRM
 in EPUB and MOBI, HUFF/CDIC-compressed MOBI, and BZZ-compressed DjVu text layers
 each say so, and say what to do instead.
+
+### Spreadsheets and presentations
+
+Both reuse the Open XML SDK that DOCX already brings in, so neither costs a new
+dependency.
+
+```csharp
+using Aelena.FileApi.Core.Services.Xlsx;
+using Aelena.FileApi.Core.Services.Pptx;
+
+var workbook = await File.ReadAllBytesAsync("budget.xlsx");
+
+// Cell values come back as text a reader would see: a workbook stores most
+// strings once in a shared table, so a naive XML scrape returns indices.
+var sheet = XlsxService.GetSheet(workbook, "budget.xlsx", sheet: "Q3");
+foreach (var row in sheet.Rows.Take(5))
+    Console.WriteLine(string.Join(" | ", row));
+
+// What does this workbook reach out to, and what is it not showing?
+var links = XlsxService.AuditLinks(workbook, "budget.xlsx");
+foreach (var formula in links.RiskyFormulas)
+    Console.WriteLine($"{formula.Sheet}!{formula.Cell} calls {formula.Function}");
+
+var hidden = XlsxService.FindHidden(workbook, "budget.xlsx");
+Console.WriteLine($"{hidden.HiddenSheetCount} hidden sheet(s), "
+                + $"{hidden.HiddenColumnCount} hidden column(s) — still in the file");
+
+// Speaker notes, which most extraction tools drop.
+var deck = await File.ReadAllBytesAsync("deck.pptx");
+foreach (var slide in PptxService.GetSlides(deck, "deck.pptx").Slides)
+    Console.WriteLine($"{slide.Number}. {slide.Title}
+   notes: {slide.Notes}");
+```
+
+### Delimited files
+
+Nothing here is told how the file is delimited; the dialect is inferred and
+reported back.
+
+```csharp
+using Aelena.FileApi.Core.Services.Common;
+
+var csv = await File.ReadAllBytesAsync("export.csv");
+
+var shape = CsvService.Inspect(csv, "export.csv");
+Console.WriteLine($"{shape.DelimiterName}, header: {shape.HasHeader}, "
+                + $"{shape.ColumnCount} columns, {shape.RaggedRowCount} ragged row(s)");
+
+foreach (var issue in shape.Issues)
+    Console.WriteLine($"[{issue.Severity}] {issue.Message}");
+
+foreach (var column in CsvService.Profile(csv, "export.csv").Columns)
+    Console.WriteLine($"{column.Name}: {column.InferredType}, "
+                    + $"{column.EmptyCount} empty, {column.DistinctCount} distinct");
+```
+
+### Text encoding
+
+```csharp
+using Aelena.FileApi.Core.Services.Common;
+
+var file = await File.ReadAllBytesAsync("README.md");
+var encoding = TextEncodingService.Detect(file, "README.md");
+
+Console.WriteLine($"{encoding.Encoding}, {encoding.LineEnding} line endings");
+
+// A stray control byte is valid UTF-8, invisible in an editor, and fatal to
+// whatever consumes the file next. This says which byte and where.
+foreach (var hit in encoding.ControlBytes)
+    Console.WriteLine($"{hit.Byte} ({hit.Name}) at line {hit.Line}, column {hit.Column}");
+
+var (_, clean) = TextEncodingService.Normalise(file, "README.md");
+```
 
 ### Images
 

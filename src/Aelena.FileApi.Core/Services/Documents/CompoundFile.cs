@@ -9,9 +9,9 @@ namespace Aelena.FileApi.Core.Services.Documents;
 /// <para>
 /// The format is a FAT filesystem in a file: a header, a sector allocation
 /// table, a directory of named streams, and a second smaller allocation table
-/// for streams below the mini-stream cutoff. Only the parts needed to pull a
-/// named stream out are implemented — no writing, no storages-within-storages
-/// traversal beyond finding entries by name.
+/// for streams below the mini-stream cutoff. Reading only: streams can be
+/// pulled out by name, or located by full path through <see cref="Nodes"/> for
+/// files that nest storages.
 /// </para>
 /// <para>
 /// Every chain walk here is bounded by the sector count. A compound file that
@@ -39,6 +39,7 @@ internal sealed class CompoundFile
     private readonly uint[] _fat;
     private readonly uint[] _miniFat;
     private readonly List<Entry> _entries;
+    private List<CompoundFileNode>? _nodes;
     private readonly byte[] _miniStream;
 
     private CompoundFile(
@@ -57,6 +58,17 @@ internal sealed class CompoundFile
 
     /// <summary>Names of every stream in the file, in directory order.</summary>
     public IEnumerable<string> StreamNames => _entries.Where(e => e.Type == 2).Select(e => e.Name);
+
+    /// <summary>
+    /// Every stream and storage with its full path, walked through the
+    /// directory's red-black tree rather than read off the flat entry array.
+    /// <para>
+    /// The distinction matters as soon as a file nests: an Outlook <c>.msg</c>
+    /// holds one <c>__substg1.0_3707001F</c> per attachment, each in its own
+    /// storage, and a scan by name can only ever find the first of them.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<CompoundFileNode> Nodes => _nodes ??= BuildTree();
 
     /// <summary>
     /// Open a compound file. Returns false with a caller-facing reason rather
@@ -141,13 +153,25 @@ internal sealed class CompoundFile
         return true;
     }
 
-    /// <summary>Read a named stream, or null when the file has no such stream.</summary>
+    /// <summary>Read a stream located by a node from <see cref="Nodes"/>.</summary>
+    public byte[]? ReadStream(CompoundFileNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        return node.IsStorage || node.Index < 0 || node.Index >= _entries.Count
+            ? null
+            : ReadEntry(_entries[node.Index]);
+    }
+
+    /// <summary>Read the first stream with this name, wherever it sits.</summary>
     public byte[]? ReadStream(string name)
     {
         var entry = _entries.Find(e => e.Type == 2 && e.Name == name);
-        if (entry is null)
-            return null;
+        return entry is null ? null : ReadEntry(entry);
+    }
 
+    private byte[]? ReadEntry(Entry entry)
+    {
         var size = (int)Math.Min(entry.Size, int.MaxValue);
         if (size == 0)
             return [];
@@ -158,6 +182,50 @@ internal sealed class CompoundFile
         return size < _miniCutoff
             ? ReadMiniChain(entry.StartSector, size)
             : ReadChain(_data, _fat, _sectorSize, entry.StartSector, size);
+    }
+
+    /// <summary>
+    /// Walk the directory tree from the root storage, naming every node by its
+    /// path. Siblings sit in a binary tree and children hang off it, so this is
+    /// an in-order traversal with a visited set: a malformed file can point a
+    /// node at its own ancestor, and an unguarded walk would never return.
+    /// </summary>
+    private List<CompoundFileNode> BuildTree()
+    {
+        var nodes = new List<CompoundFileNode>();
+        var visited = new HashSet<uint>();
+
+        if (_entries.Count == 0)
+            return nodes;
+
+        void Walk(uint index, string prefix, int depth)
+        {
+            if (index >= MaxRegularSector || index >= _entries.Count) return;
+            if (depth > 64 || !visited.Add(index)) return;
+
+            var entry = _entries[(int)index];
+
+            Walk(entry.LeftSibling, prefix, depth + 1);
+
+            var path = prefix.Length == 0 ? entry.Name : $"{prefix}/{entry.Name}";
+            var isStorage = entry.Type is 1 or 5;
+
+            nodes.Add(new CompoundFileNode(
+                Path: path,
+                Name: entry.Name,
+                IsStorage: isStorage,
+                Size: isStorage ? 0 : (long)Math.Min(entry.Size, long.MaxValue),
+                Index: (int)index));
+
+            if (isStorage)
+                Walk(entry.Child, path, depth + 1);
+
+            Walk(entry.RightSibling, prefix, depth + 1);
+        }
+
+        // Entry 0 is the root storage itself; its children are the top level.
+        Walk(_entries[0].Child, "", 0);
+        return nodes;
     }
 
     // ── Allocation tables ────────────────────────────────────────────────
@@ -313,10 +381,13 @@ internal sealed class CompoundFile
             nameBytes = (ushort)Math.Clamp(nameBytes - 2, 0, 64);
 
             var name = Encoding.Unicode.GetString(directory, offset, nameBytes);
+            var left = BinaryPrimitives.ReadUInt32LittleEndian(directory.AsSpan(offset + 68, 4));
+            var right = BinaryPrimitives.ReadUInt32LittleEndian(directory.AsSpan(offset + 72, 4));
+            var child = BinaryPrimitives.ReadUInt32LittleEndian(directory.AsSpan(offset + 76, 4));
             var start = BinaryPrimitives.ReadUInt32LittleEndian(directory.AsSpan(offset + 116, 4));
             var size = BinaryPrimitives.ReadUInt64LittleEndian(directory.AsSpan(offset + 120, 8));
 
-            entries.Add(new Entry(name, type, start, size));
+            entries.Add(new Entry(name, type, start, size, left, right, child));
         }
 
         return entries;
@@ -330,5 +401,16 @@ internal sealed class CompoundFile
         return offset > int.MaxValue ? -1 : (int)offset;
     }
 
-    private sealed record Entry(string Name, byte Type, uint StartSector, ulong Size);
+    /// <summary>One entry in a compound file's directory, named by its full path.</summary>
+    /// <param name="Path">Slash-separated path from the root storage.</param>
+    /// <param name="Name">The entry's own name.</param>
+    /// <param name="IsStorage">True for a storage (a directory), false for a stream.</param>
+    /// <param name="Size">Stream length in bytes; zero for a storage.</param>
+    /// <param name="Index">Position in the directory, used to read the stream back.</param>
+    internal sealed record CompoundFileNode(
+        string Path, string Name, bool IsStorage, long Size, int Index);
+
+    private sealed record Entry(
+        string Name, byte Type, uint StartSector, ulong Size,
+        uint LeftSibling, uint RightSibling, uint Child);
 }

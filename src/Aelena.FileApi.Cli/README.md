@@ -31,6 +31,12 @@ fileapi pdf merge -o merged.pdf a.pdf b.pdf
 fileapi pdf encrypt --password s3cret doc.pdf
 fileapi docx markdown notes.docx                # convert to Markdown
 fileapi docx metrics notes.docx
+fileapi xlsx sheets budget.xlsx                 # names, shape, visibility
+fileapi xlsx hidden budget.xlsx                 # hidden sheets, rows, columns
+fileapi xlsx audit-links budget.xlsx            # external refs and risky formulas
+fileapi pptx notes deck.pptx                    # speaker notes
+fileapi csv inspect export.csv                  # dialect, header, load problems
+fileapi csv profile export.csv                  # per-column type and cardinality
 fileapi convert detect mystery-file             # identify from content, not extension
 fileapi convert validate book.epub              # structural checks, every issue listed
 fileapi convert markdown book.mobi > book.md    # EPUB/MOBI/DjVu/.doc to Markdown

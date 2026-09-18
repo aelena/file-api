@@ -154,6 +154,13 @@ try
     // their own, converted to text, Markdown and PDF through one group.
     app.MapGroup("/convert").WithTags("Convert").MapConvertEndpoints();
 
+    // ── Phase 9 endpoints ───────────────────────────────────────────────
+    // Spreadsheets and presentations reuse the Open XML SDK that DOCX already
+    // brings in; CSV needs nothing at all.
+    app.MapGroup("/xlsx").WithTags("XLSX").MapXlsxEndpoints();
+    app.MapGroup("/pptx").WithTags("PPTX").MapPptxEndpoints();
+    app.MapGroup("/csv").WithTags("CSV").MapCsvEndpoints();
+
     app.Run();
 }
 catch (Exception ex)

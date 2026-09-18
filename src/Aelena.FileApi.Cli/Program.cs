@@ -14,7 +14,10 @@ var root = new RootCommand("fileapi — Document processing CLI powered by Aelen
     ReadabilityCommand.Create(),
     PiiCommand.Create(),
     EmailCommand.Create(),
-    ConvertCommand.Create()
+    ConvertCommand.Create(),
+    XlsxCommand.Create(),
+    PptxCommand.Create(),
+    CsvCommand.Create()
 };
 
 // Every command maps its own failures onto an exit code (see CommandExtensions.

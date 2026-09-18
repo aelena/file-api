@@ -31,6 +31,31 @@ public static class TxtEndpoints
         .DisableAntiforgery()
         .Produces<SearchResponse>(200);
 
+        group.MapPost("/detect-encoding", async (IFormFile file, HttpContext ctx, CancellationToken ct) =>
+        {
+            return Results.Ok(TextEncodingService.Detect(await file.ReadAllBytesAsync(ctx, ct), file.FileName));
+        })
+        .WithName("TxtDetectEncoding")
+        .WithDescription(
+            "Encoding, byte-order mark, line endings, and any control bytes that do not belong in "
+            + "text — with the line and column of each, because a stray 0x08 is invisible in an "
+            + "editor and only surfaces when something downstream rejects the file.")
+        .DisableAntiforgery()
+        .Produces<TextEncodingResponse>(200);
+
+        group.MapPost("/normalise", async (IFormFile file, string? lineEnding,
+            bool? stripBom, bool? stripControls, HttpContext ctx, CancellationToken ct) =>
+        {
+            var (name, bytes) = TextEncodingService.Normalise(
+                await file.ReadAllBytesAsync(ctx, ct), file.FileName,
+                lineEnding ?? "lf", stripBom ?? true, stripControls ?? true);
+
+            return Results.File(bytes, "text/plain; charset=utf-8", name);
+        })
+        .WithName("TxtNormalise")
+        .WithDescription("Rewrite as UTF-8 with consistent line endings, no BOM and no control bytes.")
+        .DisableAntiforgery();
+
         return group;
     }
 }

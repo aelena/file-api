@@ -155,6 +155,46 @@ jobs:
       # enforced here. 0.4.1 was rejected for a single 0x08 byte that reached the
       # file as an escape in a regex example; the C# compiled, because a verbatim
       # string accepts any character, so only a byte-level check catches it.
+      # The same rule, applied to the sources rather than to the packages. A
+      # \uXXXX escape that lands in a file as the raw byte still compiles — C#
+      # literals accept control characters — so nothing downstream complains
+      # until a tool that does care chokes on it. It has happened three times
+      # in this repository; the check costs nothing.
+      - name: Assert no source file holds a raw control byte
+        shell: bash
+        run: |
+          python3 - <<'EOF'
+          import glob, os, sys
+
+          ALLOWED = {0x09, 0x0A, 0x0D}          # tab, newline, carriage return
+          patterns = ["src/**/*.cs", "tests/**/*.cs", "**/*.md", "**/*.csproj", "**/*.props"]
+          skip = ("/obj/", "/bin/", "/graft/")
+          failed = False
+
+          for pattern in patterns:
+              for path in glob.glob(pattern, recursive=True):
+                  unix = path.replace(os.sep, "/")
+                  if any(s in "/" + unix for s in skip):
+                      continue
+
+                  raw = open(path, "rb").read()
+                  bad = sorted({b for b in raw if b < 0x20 and b not in ALLOWED}
+                               | ({0x7F} & set(raw)))
+                  if not bad:
+                      continue
+
+                  first = next(i for i, b in enumerate(raw) if b in bad)
+                  line = raw[:first].count(b"\n") + 1
+                  names = ", ".join(hex(b) for b in bad)
+                  print(f"::error file={unix},line={line}::raw control byte(s) {names}. "
+                        "Write them as escapes instead.")
+                  failed = True
+
+          if not failed:
+              print("OK: no source file holds a raw control byte")
+          sys.exit(1 if failed else 0)
+          EOF
+
       - name: Assert every packed README is plain UTF-8 text
         shell: bash
         run: |

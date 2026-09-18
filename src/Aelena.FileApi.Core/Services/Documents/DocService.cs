@@ -409,13 +409,13 @@ public static class DocService
         {
             switch (ch)
             {
-                case '':  // field begin — everything up to the separator
+                case '\u0013':  // field begin — everything up to the separator
                     inFieldInstruction = true;   // is the instruction, not the result
                     continue;
-                case '':  // field separator
+                case '\u0014':  // field separator
                     inFieldInstruction = false;
                     continue;
-                case '':  // field end
+                case '\u0015':  // field end
                     inFieldInstruction = false;
                     continue;
             }
@@ -425,26 +425,26 @@ public static class DocService
 
             switch (ch)
             {
-                case '\r' or '':          // paragraph mark, cell/row mark
+                case '\r' or '\u0007':          // paragraph mark, cell/row mark
                     sb.Append('\n');
                     break;
-                case '':                  // line break
+                case '\u000B':                  // line break
                     sb.Append('\n');
                     break;
-                case '':                  // page break
+                case '\u000C':                  // page break
                     sb.Append('\n');
                     break;
-                case '':                  // non-breaking hyphen
+                case '\u001E':                  // non-breaking hyphen
                     sb.Append('-');
                     break;
                 case ' ':                  // non-breaking space
                     sb.Append(' ');
                     break;
-                case '':                  // optional hyphen — invisible unless it breaks
-                case '':                  // picture placeholder
-                case '':                  // auto-numbered footnote reference
-                case '':                  // annotation reference
-                case '':                  // drawn object
+                case '\u001F':                  // optional hyphen — invisible unless it breaks
+                case '\u0001':                  // picture placeholder
+                case '\u0002':                  // auto-numbered footnote reference
+                case '\u0005':                  // annotation reference
+                case '\u0008':                  // drawn object
                 case '￾' or '￿':
                     break;
                 default:

@@ -124,12 +124,16 @@ Full detail, including the terms of every dependency, is in
 |----------|-------------|--------|
 | **PDF Toolkit** | 30+ operations: metrics, metadata, extract text/pages/markdown/annotations/bookmarks, merge, split, rotate, reorder, delete pages, watermark, encrypt/decrypt, compress, page numbers, form fields, health check | Implemented |
 | **DOCX Processing** | Metrics, metadata, paragraph extraction, markdown conversion, search, health check, metadata removal | Implemented |
+| **Spreadsheets (XLSX)** | Metrics, sheets, cell data, CSV/Markdown conversion, metadata, search, plus two audits: what the workbook links to, and what it is hiding | Implemented |
+| **Presentations (PPTX)** | Slides, **speaker notes**, Markdown outline, metrics, metadata, search | Implemented |
+| **Delimited files (CSV)** | Dialect sniffing, load validation, column profiling, JSON/Markdown conversion | Implemented |
+| **Text encoding** | Encoding and BOM detection, line endings, control-byte location, normalisation to clean UTF-8 | Implemented |
 | **Ebook & Legacy Conversion** | EPUB, MOBI/PalmDOC, DjVu and legacy binary `.doc` — content-based detection, structural validation, metadata, text, Markdown and PDF | Implemented; DjVu text limited to uncompressed layers |
 | **Markdown → PDF** | Headings, lists, tables, block quotes, code blocks, rules and inline emphasis, typeset with iText | Implemented |
 | **Image Processing** | Resize, rotate, crop, convert (PNG/JPEG/WebP/BMP/GIF/TIFF), thumbnail, flip, blur, grayscale, compress, strip metadata, EXIF, auto-orient, invert, edge detect, equalize, color palette, base64 | Implemented |
 | **PII Detection** | Regex-based scanning for emails, credit cards (Visa/MC/Amex), IBANs, SSNs, phone numbers, national IDs (US/ES/FR/DE/IT/UK/PT), dates of birth | Implemented |
 | **Text Analysis** | Metrics, search (literal + regex), readability scores (Flesch, Gunning Fog, SMOG) | Implemented |
-| **Email Parsing** | .eml (RFC 5322 / MIME) parsing with MimeKit — headers, body, attachments | Implemented |
+| **Email Parsing** | `.eml` (RFC 5322 / MIME) via MimeKit, and `.msg` (Outlook) read natively from its OLE2 container — headers, body, recipients, attachments | Implemented |
 | **File Hashing** | SHA-256, MD5, SHA-1, composite hash | Implemented |
 | **ZIP Inspection** | List entries with sizes, compression, CRC-32 | Implemented |
 | **Share Links** | CRUD with SQLite persistence, password protection, expiry, recipient restrictions — all enforced on access | Implemented |
@@ -140,7 +144,7 @@ Full detail, including the terms of every dependency, is in
 | **Geospatial** | KML, KMZ, GeoJSON, Shapefile, DXF feature extraction | Endpoint stubs; NetTopologySuite integration pending |
 | **Video** | Container/track metadata extraction | Stub; MediaInfo integration pending |
 
-## Endpoint Families (~110 routes)
+## Endpoint Families (~130 routes)
 
 | Family | Prefix | Routes | Description |
 |--------|--------|--------|-------------|
@@ -148,7 +152,10 @@ Full detail, including the terms of every dependency, is in
 | Auth | `/api/auth/*` | 1 | JWT cookie management |
 | PDF | `/pdf/*` | 30+ | Full PDF manipulation toolkit |
 | DOCX | `/docx/*` | 10 | Word document processing |
-| TXT | `/txt/*` | 2 | Plain text metrics and search |
+| XLSX | `/xlsx/*` | 10 | Workbooks — sheets, cells, link and hidden-content audits |
+| PPTX | `/pptx/*` | 7 | Presentations — slides, speaker notes, outline |
+| CSV | `/csv/*` | 5 | Delimited files — dialect, validation, profiling |
+| TXT | `/txt/*` | 4 | Metrics, search, encoding detection, normalisation |
 | Image | `/image/*` | 13 | Image manipulation (ImageSharp) |
 | Image AI | `/image-ai/*` | 14 | Local + LLM-powered image analysis |
 | Hash | `/hash` | 1 | Multi-algorithm file hashing |
@@ -156,7 +163,7 @@ Full detail, including the terms of every dependency, is in
 | Search | `/search` | 1 | Universal cross-format search |
 | Readability | `/readability` | 1 | Flesch, Gunning Fog, SMOG scores |
 | ZIP | `/zip/inspect` | 1 | Archive inspection |
-| Email | `/email/parse` | 1 | Parse .eml/.msg files |
+| Email | `/email/parse` | 1 | Parse `.eml` and `.msg` files |
 | Compare | `/compare` | 2 | Async document comparison |
 | Summarize | `/summarize` | 2 | Async document summarization |
 | Batch | `/batch/*` | 2 | Parallel multi-file processing |
@@ -169,6 +176,83 @@ Full detail, including the terms of every dependency, is in
 | Convert | `/convert/*` | 8 | EPUB, MOBI, DjVu and legacy `.doc` → text, Markdown, PDF |
 | Strip | `/strip/images` | 1 | Remove images from documents |
 | Redact | `/redact`, `/pdf/redact` | 2 | Text redaction — **not implemented, returns 501** |
+
+## Spreadsheets, presentations and delimited files
+
+Three formats that needed no new dependency: XLSX and PPTX reuse the Open XML
+SDK that DOCX already brings in, and CSV needs nothing at all.
+
+### XLSX — `/xlsx/*`
+
+The ordinary operations are there — `metrics`, `sheets`, `sheet`, `metadata`,
+`health`, `search`, `to-csv`, `to-md`, `remove-metadata`. Two are less ordinary
+and are the reason this group exists:
+
+| Route | Answers |
+|---|---|
+| `POST /xlsx/audit-links` | External workbook references, hyperlinks, formulas calling `WEBSERVICE`, `DDE`, `RTD`, `EXEC` and friends, and whether the file carries macros |
+| `POST /xlsx/hidden` | Hidden sheets, rows and columns, by range |
+
+Both answer questions a spreadsheet does not volunteer. External references and
+`WEBSERVICE` are legitimate features and also the mechanism behind a familiar
+class of phishing document — worth listing *before* the file is opened. And
+hidden is not deleted: a hidden column travels with the workbook and reappears
+with one right-click, which is a recurring way of sending data that was believed
+to be gone.
+
+Cell values come back as the text a reader would see. A workbook stores most
+strings once in a shared table and refers to them by index, so a naive XML
+scrape returns integers where the user sees words.
+
+### PPTX — `/pptx/*`
+
+`metrics`, `slides`, `notes`, `extract-markdown`, `metadata`, `search`,
+`remove-metadata`.
+
+**Speaker notes are extracted.** A deck's slides are headlines; the argument
+behind them lives in the notes pane, and most extraction tools drop it. Slides
+are read in presentation order — the slide id list, not the order the parts
+happen to sit in the package, because reordering a deck rewrites the list and
+leaves the parts where they were.
+
+### CSV — `/csv/*`
+
+`inspect`, `profile`, `rows`, `to-json`, `to-md`.
+
+Nothing is told how the file is delimited. A file named `.csv` is
+semicolon-separated about as often as it is comma-separated, and the caller
+usually does not know which they have, so the dialect is inferred from the bytes
+and reported back. `inspect` answers the real question — *will this load?* —
+with ragged rows, duplicate or blank headers, and mixed line endings each named.
+`profile` answers the next one: per column, the inferred type, how much of it is
+empty, how many distinct values, and the range.
+
+Delimiter detection scores consistency rather than frequency, so prose full of
+commas inside one quoted field does not beat the actual separator.
+
+### Text encoding — `/txt/detect-encoding`, `/txt/normalise`
+
+Encoding, byte-order mark, line endings, and **any control byte that does not
+belong in text, with the line and column of each**. `normalise` rewrites the
+file as clean UTF-8 with consistent line endings.
+
+This is not hypothetical. Version 0.4.1 of this project failed to publish
+because a single `0x08` had reached a README as a raw byte: valid UTF-8,
+invisible in every editor, and rejected by nuget.org at push time with nothing
+more helpful than "the readme file must be plain text". `detect-encoding` is
+the operation that would have found it in a second, and CI now runs the same
+check over every source file and every packed README.
+
+### Outlook `.msg`
+
+`POST /email/parse` reads `.msg` as well as `.eml`. Outlook messages are OLE2
+compound files, so this reuses the reader written for legacy `.doc` — no new
+dependency. Subject, sender, recipients (resolved from their own storages, not
+just the display names), submit time, body, and the attachment list all come
+back in the same shape a `.eml` produces.
+
+Until 0.4.4 this route advertised `.msg` support in the documentation and
+answered `501` for it.
 
 ## Converting EPUB, MOBI, DjVu and legacy `.doc`
 
@@ -333,9 +417,9 @@ dotnet test
 
 | Suite | Tests | Frameworks | Executions |
 |-------|-------|-----------|-----------|
-| `Aelena.FileApi.Tests` (unit, concurrency, conversion) | 261 | net10.0, net11.0 | 522 |
-| `Aelena.FileApi.Api.Tests` (endpoint, error-contract, auth, share) | 126 | net10.0, net11.0 | 252 |
-| **Main solution total** | **387** | | **774** |
+| `Aelena.FileApi.Tests` (unit, concurrency, conversion, office) | 387 | net10.0, net11.0 | 774 |
+| `Aelena.FileApi.Api.Tests` (endpoint, error-contract, auth, share) | 143 | net10.0, net11.0 | 286 |
+| **Main solution total** | **530** | | **1060** |
 | `Aelena.FileApi.Grpc.Tests` (separate solution) | 8 | net10.0, net11.0 | 16 |
 
 To run a single framework: `dotnet test -f net10.0`.
@@ -390,6 +474,17 @@ fileapi image grayscale photo.jpg         # Grayscale
 fileapi image blur --radius 5 photo.jpg   # Gaussian blur
 fileapi image compress --quality 60 photo.jpg  # JPEG compression
 
+# Spreadsheets, presentations, delimited files
+fileapi xlsx sheets budget.xlsx                # Names, shape, visibility
+fileapi xlsx hidden budget.xlsx                # Hidden sheets, rows, columns
+fileapi xlsx audit-links budget.xlsx           # External refs, hyperlinks, risky formulas
+fileapi xlsx sheet --sheet Q3 budget.xlsx      # One sheet as CSV on stdout
+fileapi pptx slides deck.pptx                  # Titles, hidden flags, which have notes
+fileapi pptx notes deck.pptx                   # Speaker notes only
+fileapi pptx markdown deck.pptx -o deck.md     # Outline with notes as block quotes
+fileapi csv inspect export.csv                 # Dialect, header, and why it will not load
+fileapi csv profile export.csv                 # Per-column type, nulls, cardinality, range
+
 # EPUB / MOBI / DjVu / legacy .doc
 fileapi convert detect mystery-file            # Identify it from its content
 fileapi convert validate book.epub             # Structural checks, every issue listed
@@ -405,7 +500,7 @@ fileapi pii detect contract.pdf           # Detect emails, SSNs, credit cards
 fileapi txt metrics notes.txt             # Line, word, token counts
 fileapi txt search --query "TODO" notes.txt
 fileapi zip archive.zip                   # List entries with sizes
-fileapi email message.eml                 # Parse headers, body, attachments
+fileapi email message.eml                 # Parse .eml or .msg
 ```
 
 ### Exit codes

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Aelena.FileApi.Core</RootNamespace>
     <PackageId>Aelena.FileApi.Core.Pdf</PackageId>
-    <Version>0.4.3</Version>
+    <Version>0.4.4</Version>
     <Authors>aelena</Authors>
     <Description>PDF operations for Aelena.FileApi.Core, built on iText 7 — extraction, merge, split, watermark, encryption, and Markdown typesetting for the EPUB/MOBI/DjVu/.doc converters in Aelena.FileApi.Core.
 

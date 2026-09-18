@@ -4,6 +4,100 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4]
+
+Spreadsheets, presentations, delimited files, text encoding, and Outlook
+messages. Four of the five needed no new dependency at all; the fifth needed
+none either, because the reader it wanted was already here.
+
+### Added — XLSX (`/xlsx/*`)
+
+The Open XML SDK has been a dependency since DOCX shipped. It reads workbooks
+too, and a document toolkit that handles Word but not Excel was a conspicuous
+gap. Ten routes: metrics, sheets, sheet data, metadata, health, search, CSV and
+Markdown conversion, metadata removal — plus two that are the reason this group
+is interesting:
+
+- **`/xlsx/audit-links`** lists external workbook references, hyperlinks,
+  formulas calling `WEBSERVICE`, `DDE`, `RTD`, `EXEC` and similar, and whether
+  the file carries macros. These are legitimate features and also the mechanism
+  behind a familiar class of phishing document; worth seeing before the file is
+  opened rather than after.
+- **`/xlsx/hidden`** reports hidden sheets, rows and columns. Hidden is not
+  deleted — a hidden column travels with the workbook and reappears with one
+  right-click, which is a recurring way of sending data believed to be gone.
+
+Cell values resolve through the shared string table, so they come back as the
+text a reader sees rather than as the integers a naive XML scrape returns.
+
+### Added — PPTX (`/pptx/*`)
+
+Seven routes: metrics, slides, notes, Markdown outline, metadata, search,
+metadata removal.
+
+**Speaker notes are extracted.** A deck's slides are headlines; the argument
+behind them lives in the notes pane, and most extraction tools drop it. Slides
+are read through the slide id list rather than by enumerating parts, because
+reordering a deck rewrites that list and leaves the parts where they were.
+
+### Added — CSV (`/csv/*`)
+
+Five routes: inspect, profile, rows, JSON and Markdown conversion. No
+dependency at all.
+
+The dialect is inferred from the bytes and reported back rather than assumed. A
+file named `.csv` is semicolon-separated about as often as it is
+comma-separated and the caller usually does not know which they have. Detection
+scores consistency rather than frequency, so prose full of commas inside one
+quoted field does not beat the real separator. `inspect` answers "will this
+load?" — ragged rows, duplicate and blank headers, mixed line endings — and
+`profile` answers "what is in it?" per column.
+
+### Added — text encoding (`/txt/detect-encoding`, `/txt/normalise`)
+
+Encoding, byte-order mark, line endings, and **every control byte that does not
+belong in text, with the line and column of each**. `normalise` rewrites a file
+as clean UTF-8 with consistent line endings.
+
+This is the operation that would have caught the failure that sank 0.4.1, where
+a single `0x08` reached a README as a raw byte — valid UTF-8, invisible in an
+editor, and rejected by nuget.org at push time with nothing more useful than
+"the readme file must be plain text".
+
+### Fixed — `.msg` was advertised and not implemented
+
+`/email/parse` documented `.eml` and `.msg` support and answered `501` for the
+second. Outlook messages are OLE2 compound files, so they are now read through
+the `CompoundFile` reader written for legacy `.doc` — subject, sender,
+recipients resolved from their own storages rather than from display names
+only, submit time from the fixed-width property table, body, and attachments.
+No new dependency.
+
+`CompoundFile` gained a proper directory-tree walk to make this possible. The
+flat scan it had was enough for `.doc`, which has one stream per name, but a
+`.msg` holds one `__substg1.0_3707001F` per attachment in its own storage and a
+scan by name can only ever find the first.
+
+### Added — CI gate for raw control bytes
+
+A `\uXXXX` escape that lands in a file as the raw byte still compiles, because
+C# literals accept control characters, so nothing complains until a tool that
+does care chokes on it. That has now happened three times here — twice in
+source, once in a README, and the README one cost a release. CI now checks
+every `.cs`, `.md`, `.csproj` and `.props` file and fails naming the file, line
+and byte. Four files already in the repository were fixed by it, including two
+shipped in 0.4.0.
+
+### Tests
+
+416 → 530 (1060 executions). Fixtures for XLSX and PPTX were written by Excel
+and PowerPoint themselves, with the same public-domain text as the existing
+ones. There is no Outlook fixture — Outlook COM could not be started on the
+build machine — so `.msg` tests build their input with a `CompoundFileBuilder`
+written independently from the specification. That limitation is stated in
+[`SampleFiles/README.md`](tests/Aelena.FileApi.Tests/SampleFiles/README.md)
+rather than left for someone to discover.
+
 ## [0.4.3]
 
 A one-line fix to a method that had been wrong since it shipped, and the tests

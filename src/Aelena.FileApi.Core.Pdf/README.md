@@ -34,9 +34,9 @@ is an agreement between you and iText Software.
 
 **Everything except PDF is MIT.**
 [`Aelena.FileApi.Core`](https://www.nuget.org/packages/Aelena.FileApi.Core) gives
-you DOCX, EPUB, MOBI, DjVu, legacy `.doc`, images, email, hashing, PII detection,
-readability, text analysis and ZIP — with no reference to iText, direct or
-transitive. PDF was split into this separate package precisely so the rest could
+you DOCX, XLSX, PPTX, EPUB, MOBI, DjVu, legacy `.doc`, CSV, images, email,
+hashing, PII detection, readability, text analysis and ZIP — with no reference
+to iText, direct or transitive. PDF was split into this separate package precisely so the rest could
 stay permissive.
 
 ## Install

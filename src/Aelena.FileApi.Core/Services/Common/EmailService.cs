@@ -6,8 +6,9 @@ namespace Aelena.FileApi.Core.Services.Common;
 
 /// <summary>
 /// Parses email files (.eml / .msg) into structured data.
-/// EML (RFC 5322 / MIME) is handled natively via MimeKit.
-/// MSG (Outlook) format returns 501 — requires MsgReader NuGet package (Phase 5+).
+/// EML (RFC 5322 / MIME) is handled natively via MimeKit; MSG (Outlook) is an
+/// OLE2 compound file and is read by <see cref="MsgService"/> on top of the
+/// same reader legacy .doc uses, so neither format costs an extra dependency.
 /// </summary>
 public static class EmailService
 {
@@ -23,8 +24,7 @@ public static class EmailService
         return ext switch
         {
             "eml" => ParseEml(data, fileName),
-            "msg" => throw new FileApiException(501,
-                "MSG (Outlook) format requires MsgReader package. Coming in a future phase."),
+            "msg" => MsgService.Parse(data, fileName),
             _ => throw new FileApiException(400,
                 $"Unsupported email format: .{ext}. Use .eml or .msg files.")
         };

@@ -355,7 +355,7 @@ public class DocumentConversionTests
         text.Should().Contain("Necessity is the mother of invention");
 
         // Word's in-band control characters must not survive into the output.
-        text.Should().NotContain("").And.NotContain("").And.NotContain("");
+        text.Should().NotContain("\u0007").And.NotContain("\u0013").And.NotContain("\u0014");
         result.WordCount.Should().BeGreaterThan(100);
     }
 
