@@ -130,7 +130,7 @@ jobs:
       # Trivy reads the SBOM rather than re-resolving the graph, so what is
       # scanned is exactly what was published as the inventory.
       - name: Scan the SBOM
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: sbom
           scan-ref: ./sbom/sbom.json
@@ -149,7 +149,7 @@ jobs:
       # decides whether the build fails. High and critical stop it; lower
       # severities are recorded and reviewed rather than blocking.
       - name: Fail on high or critical
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: sbom
           scan-ref: ./sbom/sbom.json
@@ -202,7 +202,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/dependency-review-action@v4
+      # No moving `v4`/`v5` tag is published for this action, so it is pinned exactly.
+      - uses: actions/dependency-review-action@v5.0.0
         with:
           fail-on-severity: low
           # The licence boundary this repository maintains by hand: the MIT
