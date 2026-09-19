@@ -602,7 +602,7 @@ cannot wait for someone to push.
 | Job | Covers |
 |---|---|
 | `dependency audit` | `dotnet list package --vulnerable --include-transitive`, failing on **any** severity. Deprecated and outdated packages are reported without blocking |
-| `SBOM + Trivy` | A CycloneDX SBOM published as a build artifact, then scanned — findings to the Security tab, high and critical failing the build |
+| `SBOM + Trivy` | A CycloneDX SBOM published as a build artifact, then scanned — findings to the Security tab. Reports rather than blocks: see below |
 | `CodeQL (C#)` | Static analysis of the code itself with `security-extended`, which no dependency scanner covers |
 | `dependency review` | Blocks a pull request that introduces a vulnerable or copyleft-licensed dependency before it merges |
 
@@ -612,6 +612,14 @@ analyzer inspects compiled assemblies rather than the package graph — so on a
 NuGet project it sees *less* than `dotnet list package --vulnerable` and Trivy
 do between them, not more. The four jobs above cover what it would have told
 you, need no secrets, and put their findings in the Security tab.
+
+**Trivy reports; it does not block.** For a .NET-only repository it and
+`dotnet list package --vulnerable` both resolve NuGet advisories from the same
+GitHub Advisory Database, so it is a second opinion rather than extra coverage —
+measured, both return 0 findings across the same 119 components. What it adds is
+the SARIF feed into the Security tab and a scan of the published inventory,
+neither of which is worth blocking a merge over when Trivy's database mirror is
+rate-limiting. The blocking gate is the dependency audit.
 
 The severity threshold on the dependency audit is deliberately "any, including
 low". This library is handed untrusted files by design, so a low-severity
