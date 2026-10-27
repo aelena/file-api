@@ -69,18 +69,48 @@ jobs:
       # The threshold is deliberately "any": this library is handed untrusted
       # files by design, so a low-severity parser bug in a dependency is not a
       # low-severity problem here.
+      #
+      # `dotnet list` ignores NuGetAuditSuppress, so the accepted-risk list in
+      # Directory.Build.props is applied here by hand: a suppressed advisory is
+      # reported as a warning, anything else fails the job. One list, not two.
       - name: Vulnerable packages
         shell: bash
         run: |
           set -o pipefail
-          report=$(dotnet list Aelena.FileApi.sln package --vulnerable --include-transitive 2>&1)
-          echo "$report"
+          dotnet list Aelena.FileApi.sln package --vulnerable --include-transitive 2>&1
 
-          if echo "$report" | grep -qiE '^[[:space:]]+> '; then
-            echo "::error::Vulnerable package(s) found. See the table above."
+          found=$(dotnet list Aelena.FileApi.sln package --vulnerable --include-transitive --format json \
+            | jq -r '[.projects[].frameworks[]? | (.topLevelPackages[]?, .transitivePackages[]?)
+                      | .id as $id | .resolvedVersion as $v
+                      | .vulnerabilities[]? | "\($id) \($v) \(.advisoryurl)"] | unique[]')
+          suppressed=$(grep -oE 'NuGetAuditSuppress Include="[^"]+"' Directory.Build.props \
+            | sed -E 's/.*Include="([^"]+)"/\1/' || true)
+
+          # Guarded: an empty pattern list given to grep -f matches every line,
+          # which would wave every advisory through.
+          if [ -n "$suppressed" ]; then
+            accepted=$(echo "$found" | grep -Ff <(echo "$suppressed") || true)
+            blocking=$(echo "$found" | grep -vFf <(echo "$suppressed") | grep . || true)
+          else
+            accepted=""
+            blocking="$found"
+          fi
+
+          while read -r line; do
+            [ -n "$line" ] && echo "::warning::Suppressed in Directory.Build.props (accepted risk): $line"
+          done <<< "$accepted"
+
+          # A suppression nothing matches any more is dead weight; say so.
+          while read -r url; do
+            [ -n "$url" ] && ! echo "$found" | grep -qF "$url" \
+              && echo "::notice::No longer reported, remove from Directory.Build.props: $url"
+          done <<< "$suppressed"
+
+          if [ -n "$blocking" ]; then
+            while read -r line; do echo "::error::Vulnerable package: $line"; done <<< "$blocking"
             exit 1
           fi
-          echo "OK: no vulnerable packages"
+          echo "OK: no vulnerable packages outside the accepted-risk list"
 
       # Deprecation is not a vulnerability and must not block a build, but it is
       # how a package stops receiving fixes, so it is surfaced every run.
